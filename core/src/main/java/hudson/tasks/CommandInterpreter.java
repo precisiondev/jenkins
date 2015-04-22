@@ -94,7 +94,6 @@ public abstract class CommandInterpreter extends Builder {
                 e.printStackTrace(listener.fatalError(Messages.CommandInterpreter_CommandFailed()));
                 r = -1;
             }
-            setBuildResult(build, r);
             return r==0;
         } finally {
             try {
@@ -107,13 +106,6 @@ public abstract class CommandInterpreter extends Builder {
                 e.printStackTrace( listener.fatalError(Messages.CommandInterpreter_UnableToDelete(script)) );
             }
         }
-    }
-    
-    protected void setBuildResult(AbstractBuild<?,?> build, int scriptResult) {
-        if (scriptResult == 0)
-            build.setResult(hudson.model.Result.SUCCESS);
-        else
-            build.setResult(hudson.model.Result.FAILURE);
     }
 
     /**
