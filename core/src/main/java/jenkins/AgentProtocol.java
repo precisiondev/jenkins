@@ -4,7 +4,6 @@ import hudson.Extension;
 import hudson.ExtensionList;
 import hudson.ExtensionPoint;
 import hudson.TcpSlaveAgentListener;
-import hudson.model.AperiodicWork;
 import jenkins.model.Jenkins;
 
 import java.io.IOException;
@@ -27,6 +26,10 @@ public abstract class AgentProtocol implements ExtensionPoint {
      * Protocol name.
      *
      * This is a short string that consists of printable ASCII chars. Sent by the client to select the protocol.
+     *
+     * @return
+     *      null to be disabled. This is useful for avoiding getting used
+     *      until the protocol is properly configured.
      */
     public abstract String getName();
 
@@ -36,15 +39,16 @@ public abstract class AgentProtocol implements ExtensionPoint {
     public abstract void handle(Socket socket) throws IOException, InterruptedException;
 
     /**
-     * Returns all the registered {@link AperiodicWork}s.
+     * Returns all the registered {@link AgentProtocol}s.
      */
     public static ExtensionList<AgentProtocol> all() {
-        return Jenkins.getInstance().getExtensionList(AgentProtocol.class);
+        return ExtensionList.lookup(AgentProtocol.class);
     }
 
     public static AgentProtocol of(String protocolName) {
         for (AgentProtocol p : all()) {
-            if (p.getName().equals(protocolName))
+            String n = p.getName();
+            if (n!=null && n.equals(protocolName))
                 return p;
         }
         return null;

@@ -34,7 +34,7 @@ import java.util.Collection;
 import java.util.Collections;
 
 /**
- * Abstract base class for {@link Queue.Task} to protect plugins
+ * Abstract base class for {@link hudson.model.Queue.Task} to protect plugins
  * from new additions to the interface.
  *
  * @author Kohsuke Kawaguchi
@@ -68,5 +68,11 @@ public abstract class AbstractQueueTask implements Queue.Task {
     @Nonnull
     public Authentication getDefaultAuthentication() {
         return ACL.SYSTEM;
+    }
+
+    @Nonnull
+    @Override
+    public Authentication getDefaultAuthentication(Queue.Item item) {
+        return getDefaultAuthentication();
     }
 }

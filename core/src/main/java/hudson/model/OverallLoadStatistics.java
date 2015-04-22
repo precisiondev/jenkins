@@ -1,18 +1,18 @@
 /*
  * The MIT License
- * 
+ *
  * Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Seiji Sogabe
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,6 +25,7 @@ package hudson.model;
 
 import hudson.model.MultiStageTimeSeries.TimeScale;
 import hudson.model.MultiStageTimeSeries.TrendChart;
+import hudson.model.queue.SubTask;
 import jenkins.model.Jenkins;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -36,11 +37,11 @@ import org.kohsuke.stapler.export.Exported;
  *
  * @author Kohsuke Kawaguchi
  * @see Jenkins#overallLoad
- * @see UnlabeldLoadStatistics
+ * @see jenkins.model.UnlabeledLoadStatistics
  */
 public class OverallLoadStatistics extends LoadStatistics {
     /**
-     * Number of total {@link Queue.BuildableItem}s that represents blocked builds.
+     * Number of total {@link hudson.model.Queue.BuildableItem}s that represents blocked builds.
      *
      * @deprecated as of 1.467
      *      Use {@link #queueLength}. Left as an alias here for backward compatibility.
@@ -68,11 +69,21 @@ public class OverallLoadStatistics extends LoadStatistics {
         return Jenkins.getInstance().getQueue().countBuildableItems();
     }
 
+    @Override
+    protected Iterable<Node> getNodes() {
+        return Jenkins.getActiveInstance().getNodes();
+    }
+
+    @Override
+    protected boolean matches(Queue.Item item, SubTask subTask) {
+        return true;
+    }
+
     /**
      * When drawing the overall load statistics, use the total queue length,
-     * not {@link #queueLength}, which just shows jobs that are to be run on the master. 
+     * not {@link #queueLength}, which just shows jobs that are to be run on the master.
      */
     protected TrendChart createOverallTrendChart(TimeScale timeScale) {
-        return MultiStageTimeSeries.createTrendChart(timeScale,busyExecutors,totalExecutors,queueLength);
+        return MultiStageTimeSeries.createTrendChart(timeScale,busyExecutors,onlineExecutors,queueLength,availableExecutors);
     }
 }

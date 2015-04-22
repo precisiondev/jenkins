@@ -55,7 +55,7 @@ var Sortable = (function() {
 
         // We have a first row: assume it's the header, and make its contents clickable links
         firstRow.each(function (cell){
-            cell.innerHTML = '<a href="#" class="sortheader">'+this.getInnerText(cell)+'<span class="sortarrow" /></a>';
+            cell.innerHTML = '<a href="#" class="sortheader">'+this.getInnerText(cell)+'<span class="sortarrow"></span></a>';
             this.arrows.push(cell.firstChild.lastChild);
 
             var self = this;
@@ -295,6 +295,18 @@ var Sortable = (function() {
             return parseFloat(a) - parseFloat(b);
         },
 
+        percent : function(a,b) {
+            a = a.replace(/[^0-9.<>]/g,'');
+            b = b.replace(/[^0-9.<>]/g,'');
+            if (a == "<100") a = "99.9";
+            else if (a == ">0") a = "0.1";
+            if (b == "<100") b = "99.9";
+            else if (b == ">0") b = "0.1";
+            a = a.replace(/[^0-9.]/g,'');
+            b = b.replace(/[^0-9.]/g,'');
+            return parseFloat(a) - parseFloat(b);
+        },
+
         numeric : function(a,b) {
             a = parseFloat(a);
             if (isNaN(a)) a = 0;
@@ -323,6 +335,7 @@ var Sortable = (function() {
             if (itm.match(/^\d\d[\/-]\d\d[\/-]\d\d\d\d$/)) sortfn = this.date;
             if (itm.match(/^\d\d[\/-]\d\d[\/-]\d\d$/)) sortfn = this.date;
             if (itm.match(/^[�$]/)) sortfn = this.currency;
+            if (itm.match(/\%$/)) sortfn = this.percent;
             if (itm.match(/^-?[\d\.]+$/)) sortfn = this.numeric;
             return sortfn;
         },
@@ -364,6 +377,10 @@ function ts_makeSortable(table) { // backward compatibility
     return new Sortable.Sortable(table);
 }
 
-function ts_refresh(table) { // backward compatibility
-    return table.sortable.refresh();
+/** Calls table.sortable.refresh() in case the sortable has been initialized; otherwise does nothing. */
+function ts_refresh(table) {
+    var s = table.sortable;
+    if (s != null) {
+        s.refresh();
+    }
 }

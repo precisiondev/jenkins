@@ -34,9 +34,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import javax.annotation.Nonnull;
 
 /**
- * Created when {@link Queue.Item} is created so that the caller can track the progress of the task.
+ * Created when {@link hudson.model.Queue.Item} is created so that the caller can track the progress of the task.
  *
  * @author Kohsuke Kawaguchi
  */
@@ -83,7 +84,15 @@ public final class FutureImpl extends AsyncFutureImpl<Executable> implements Que
         }
     }
 
-    synchronized void addExecutor(Executor executor) {
+    @Override
+    public synchronized void setAsCancelled() {
+        super.setAsCancelled();
+        if (!start.isDone()) {
+            start.setAsCancelled();
+        }
+    }
+
+    synchronized void addExecutor(@Nonnull Executor executor) {
         this.executors.add(executor);
     }
 }

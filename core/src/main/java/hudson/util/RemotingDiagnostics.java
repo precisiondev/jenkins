@@ -29,20 +29,23 @@ import hudson.FilePath;
 import hudson.Functions;
 import jenkins.model.Jenkins;
 import hudson.remoting.AsyncFutureImpl;
-import hudson.remoting.Callable;
 import hudson.remoting.DelegatingCallable;
 import hudson.remoting.Future;
 import hudson.remoting.VirtualChannel;
 import hudson.security.AccessControlled;
+import jenkins.security.MasterToSlaveCallable;
+
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.customizers.ImportCustomizer;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.WebMethod;
 
+import javax.annotation.Nonnull;
 import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -70,7 +73,7 @@ public final class RemotingDiagnostics {
         return channel.call(new GetSystemProperties());
     }
 
-    private static final class GetSystemProperties implements Callable<Map<Object,Object>,RuntimeException> {
+    private static final class GetSystemProperties extends MasterToSlaveCallable<Map<Object,Object>,RuntimeException> {
         public Map<Object,Object> call() {
             return new TreeMap<Object,Object>(System.getProperties());
         }
@@ -89,24 +92,13 @@ public final class RemotingDiagnostics {
         return channel.callAsync(new GetThreadDump());
     }
 
-    private static final class GetThreadDump implements Callable<Map<String,String>,RuntimeException> {
+    private static final class GetThreadDump extends MasterToSlaveCallable<Map<String,String>,RuntimeException> {
         public Map<String,String> call() {
             Map<String,String> r = new LinkedHashMap<String,String>();
-            try {
                 ThreadInfo[] data = Functions.getThreadInfos();
                 Functions.ThreadGroupMap map = Functions.sortThreadsAndGetGroupMap(data);
                 for (ThreadInfo ti : data)
                     r.put(ti.getThreadName(),Functions.dumpThreadInfo(ti,map));
-            } catch (LinkageError _) {
-                // not in JDK6. fall back to JDK5
-                r.clear();
-                for (Map.Entry<Thread,StackTraceElement[]> t : Functions.dumpAllThreads().entrySet()) {
-                    StringBuilder buf = new StringBuilder();
-                    for (StackTraceElement e : t.getValue())
-                        buf.append(e).append('\n');
-                    r.put(t.getKey().getName(),buf.toString());
-                }
-            }
             return r;
         }
         private static final long serialVersionUID = 1L;
@@ -115,11 +107,11 @@ public final class RemotingDiagnostics {
     /**
      * Executes Groovy script remotely.
      */
-    public static String executeGroovy(String script, VirtualChannel channel) throws IOException, InterruptedException {
+    public static String executeGroovy(String script, @Nonnull VirtualChannel channel) throws IOException, InterruptedException {
         return channel.call(new Script(script));
     }
 
-    private static final class Script implements DelegatingCallable<String,RuntimeException> {
+    private static final class Script extends MasterToSlaveCallable<String,RuntimeException> implements DelegatingCallable<String,RuntimeException> {
         private final String script;
         private transient ClassLoader cl;
 
@@ -161,7 +153,7 @@ public final class RemotingDiagnostics {
      * Obtains the heap dump in an HPROF file.
      */
     public static FilePath getHeapDump(VirtualChannel channel) throws IOException, InterruptedException {
-        return channel.call(new Callable<FilePath, IOException>() {
+        return channel.call(new MasterToSlaveCallable<FilePath, IOException>() {
             public FilePath call() throws IOException {
                 final File hprof = File.createTempFile("hudson-heapdump", "hprof");
                 hprof.delete();
@@ -172,7 +164,7 @@ public final class RemotingDiagnostics {
 
                     return new FilePath(hprof);
                 } catch (JMException e) {
-                    throw new IOException2(e);
+                    throw new IOException(e);
                 }
             }
 
@@ -202,7 +194,7 @@ public final class RemotingDiagnostics {
 
         @WebMethod(name="heapdump.hprof")
         public void doHeapDump(StaplerRequest req, StaplerResponse rsp) throws IOException, InterruptedException {
-            owner.checkPermission(Jenkins.ADMINISTER);
+            owner.checkPermission(Jenkins.RUN_SCRIPTS);
             rsp.setContentType("application/octet-stream");
 
             FilePath dump = obtain();

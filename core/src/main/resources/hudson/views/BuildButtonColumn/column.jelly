@@ -30,22 +30,23 @@ THE SOFTWARE.
               <a href="${jobBaseUrl}${job.shortUrl}build?delay=0sec">
                   <j:choose>
                       <j:when test="${job.parameterized}">
-                          <img src="${imagesURL}/${subIconSize}/clock.png"
-                               title="${%Schedule a build with parameters}" alt="${%Schedule a build with parameters}"
-                               border="0"/>
+                          <j:set var="title" value="${%Schedule_a_build_with_parameters(h.getRelativeDisplayNameFrom(job, itemGroup))}"/>
+                          <j:set var="onclick" value="${null}"/>
                       </j:when>
                       <j:otherwise>
-                          <img src="${imagesURL}/${subIconSize}/clock.png"
-                               title="${%Schedule a build}" alt="${%Schedule a build}"
-                               onclick="return build_${id}(this)"
-                               border="0"/>
+                          <j:set var="title" value="${%Schedule_a_build(h.getRelativeDisplayNameFrom(job, itemGroup))}"/>
+                          <j:set var="onclick" value="return build_${id}(this)"/>
                       </j:otherwise>
                   </j:choose>
+                  <j:set var="icon" value="${app.queue.contains(job) ? 'icon-clock-anime' : 'icon-clock'}"/>
+                  <l:icon class="${icon} ${subIconSizeClass}"
+                         title="${title}" alt="${title}"
+                         onclick="${onclick}"/>
               </a>
               <script>
                 function build_${id}(img) {
                   new Ajax.Request(img.parentNode.href);
-                  hoverNotification('${%Build scheduled}', img, -100);
+                  hoverNotification('${%Build_scheduled}', img, -100);
                   return false;
                 }
               </script>

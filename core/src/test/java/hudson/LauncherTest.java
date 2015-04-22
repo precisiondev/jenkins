@@ -24,31 +24,36 @@
 
 package hudson;
 
-import jenkins.model.Jenkins;
 import hudson.model.StreamBuildListener;
 import hudson.model.TaskListener;
+import hudson.remoting.Callable;
 import hudson.util.ProcessTree;
 import hudson.util.StreamTaskListener;
-import hudson.remoting.Callable;
 import java.io.ByteArrayOutputStream;
-import org.apache.commons.io.FileUtils;
-import org.jvnet.hudson.test.Bug;
-
 import java.io.File;
+import jenkins.security.MasterToSlaveCallable;
+import org.apache.commons.io.FileUtils;
+import static org.junit.Assert.*;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import org.jvnet.hudson.test.Issue;
 
-public class LauncherTest extends ChannelTestCase {
-    @Bug(4611)
-    public void testRemoteKill() throws Exception {
+public class LauncherTest {
+
+    @Rule public ChannelRule channels = new ChannelRule();
+    @Rule public TemporaryFolder temp = new TemporaryFolder();
+
+    @Issue("JENKINS-4611")
+    @Test public void remoteKill() throws Exception {
         if (File.pathSeparatorChar != ':') {
             System.err.println("Skipping, currently Unix-specific test");
             return;
         }
 
-        File tmp = File.createTempFile("testRemoteKill", "");
-        tmp.delete();
+        File tmp = temp.newFile();
 
-        try {
-            FilePath f = new FilePath(french, tmp.getPath());
+            FilePath f = new FilePath(channels.french, tmp.getPath());
             Launcher l = f.createLauncher(StreamTaskListener.fromStderr());
             Proc p = l.launch().cmds("sh", "-c", "echo $$$$ > "+tmp+"; sleep 30").stdout(System.out).stderr(System.err).start();
             while (!tmp.exists())
@@ -57,8 +62,8 @@ public class LauncherTest extends ChannelTestCase {
             p.kill();
             assertTrue(p.join()!=0);
             long end = System.currentTimeMillis();
-            assertTrue("join finished promptly", (end - start < 5000));
-            french.call(NOOP); // this only returns after the other side of the channel has finished executing cancellation
+            assertTrue("join finished promptly", (end - start < 15000));
+            channels.french.call(NOOP); // this only returns after the other side of the channel has finished executing cancellation
             Thread.sleep(2000); // more delay to make sure it's gone
             assertNull("process should be gone",ProcessTree.get().get(Integer.parseInt(FileUtils.readFileToString(tmp).trim())));
 
@@ -69,19 +74,16 @@ public class LauncherTest extends ChannelTestCase {
             // hudson.model.Hudson.instance.nodes[0].rootPath.createLauncher(new hudson.util.StreamTaskListener(System.err)).
             //   launch().cmds("sleep", "1d").stdout(System.out).stderr(System.err).start().kill()
             // hangs and on slave machine pgrep sleep => one process; after manual kill, script returns.
-        } finally {
-            tmp.delete();
-        }
     }
 
-    private static final Callable<Object,RuntimeException> NOOP = new Callable<Object,RuntimeException>() {
+    private static final Callable<Object,RuntimeException> NOOP = new MasterToSlaveCallable<Object,RuntimeException>() {
         public Object call() throws RuntimeException {
             return null;
         }
     };
 
-    @Bug(15733)
-    public void testDecorateByEnv() throws Exception {
+    @Issue("JENKINS-15733")
+    @Test public void decorateByEnv() throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         TaskListener l = new StreamBuildListener(baos);
         Launcher base = new Launcher.LocalLauncher(l);
@@ -93,26 +95,26 @@ public class LauncherTest extends ChannelTestCase {
         assertTrue(log, log.contains("val1 val2"));
     }
 
-    @Bug(18368)
-    public void testDecoratedByEnvMaintainsIsUnix() throws Exception {
+    @Issue("JENKINS-18368")
+    @Test public void decoratedByEnvMaintainsIsUnix() throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         TaskListener listener = new StreamBuildListener(output);
-        Launcher remoteLauncher = new Launcher.RemoteLauncher(listener, Jenkins.MasterComputer.localChannel, false);
+        Launcher remoteLauncher = new Launcher.RemoteLauncher(listener, FilePath.localChannel, false);
         Launcher decorated = remoteLauncher.decorateByEnv(new EnvVars());
         assertEquals(false, decorated.isUnix());
-        remoteLauncher = new Launcher.RemoteLauncher(listener, Jenkins.MasterComputer.localChannel, true);
+        remoteLauncher = new Launcher.RemoteLauncher(listener, FilePath.localChannel, true);
         decorated = remoteLauncher.decorateByEnv(new EnvVars());
         assertEquals(true, decorated.isUnix());
     }
 
-    @Bug(18368)
-    public void testDecoratedByPrefixMaintainsIsUnix() throws Exception {
+    @Issue("JENKINS-18368")
+    @Test public void decoratedByPrefixMaintainsIsUnix() throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         TaskListener listener = new StreamBuildListener(output);
-        Launcher remoteLauncher = new Launcher.RemoteLauncher(listener, Jenkins.MasterComputer.localChannel, false);
+        Launcher remoteLauncher = new Launcher.RemoteLauncher(listener, FilePath.localChannel, false);
         Launcher decorated = remoteLauncher.decorateByPrefix("test");
         assertEquals(false, decorated.isUnix());
-        remoteLauncher = new Launcher.RemoteLauncher(listener, Jenkins.MasterComputer.localChannel, true);
+        remoteLauncher = new Launcher.RemoteLauncher(listener, FilePath.localChannel, true);
         decorated = remoteLauncher.decorateByPrefix("test");
         assertEquals(true, decorated.isUnix());
     }

@@ -28,7 +28,7 @@ import javax.servlet.http.HttpSession;
  * {@link Authentication} often contains {@link UserDetails} implemented by a plugin,
  * but when it's persisted as a part of {@link HttpSession}, such instance will never
  * de-serialize correctly because the container isn't aware of additional classloading
- * in Hudson.
+ * in Jenkins.
  *
  * <p>
  * Jenkins doesn't work with a clustering anyway, and so it's better to just not persist
@@ -37,7 +37,7 @@ import javax.servlet.http.HttpSession;
  * See <a href="http://jenkins.361315.n4.nabble.com/ActiveDirectory-Plugin-ClassNotFoundException-while-loading-persisted-sessions-tp376451.html">the problem report</a>.
  *
  * @author Kohsuke Kawaguchi
- * @see HttpSessionContextIntegrationFilter2
+ * @see hudson.security.HttpSessionContextIntegrationFilter2
  * @since 1.509
  */
 public class NonSerializableSecurityContext implements SecurityContext {

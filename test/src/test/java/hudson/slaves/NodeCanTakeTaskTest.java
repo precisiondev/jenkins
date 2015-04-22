@@ -24,6 +24,9 @@
 
 package hudson.slaves;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -38,8 +41,6 @@ import hudson.model.Queue.BuildableItem;
 import hudson.model.Queue.Task;
 import hudson.model.Slave;
 import hudson.model.queue.CauseOfBlockage;
-
-import junit.framework.Assert;
 
 import org.jvnet.hudson.test.HudsonTestCase;
 
@@ -69,13 +70,13 @@ public class NodeCanTakeTaskTest extends HudsonTestCase {
             fail("Expected timeout exception");
         } catch (TimeoutException e) {
             List<BuildableItem> buildables = jenkins.getQueue().getBuildableItems();
-            Assert.assertNotNull(buildables);
-            Assert.assertEquals(1, buildables.size());
+            assertNotNull(buildables);
+            assertEquals(1, buildables.size());
 
             BuildableItem item = buildables.get(0);
-            Assert.assertEquals(project, item.task);
-            Assert.assertNotNull(item.getCauseOfBlockage());
-            Assert.assertEquals(Messages.Queue_WaitingForNextAvailableExecutor(), item.getCauseOfBlockage().getShortDescription());
+            assertEquals(project, item.task);
+            assertNotNull(item.getCauseOfBlockage());
+            assertEquals(Messages.Queue_WaitingForNextAvailableExecutor(), item.getCauseOfBlockage().getShortDescription());
         }
     }
 

@@ -23,29 +23,30 @@
  */
 package hudson;
 
-import static org.junit.Assert.assertEquals;
-import static org.powermock.api.mockito.PowerMockito.mock;
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
-import static org.powermock.api.mockito.PowerMockito.when;
 import hudson.model.Action;
+import hudson.model.Computer;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
 import hudson.model.TopLevelItem;
 import hudson.model.View;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import jenkins.model.Jenkins;
-
+import static org.junit.Assert.*;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.jvnet.hudson.test.Bug;
+import org.jvnet.hudson.test.Issue;
 import org.kohsuke.stapler.Ancestor;
 import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerRequest;
+import static org.powermock.api.mockito.PowerMockito.mock;
+import static org.powermock.api.mockito.PowerMockito.mockStatic;
+import static org.powermock.api.mockito.PowerMockito.when;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
@@ -66,7 +67,7 @@ public class FunctionsTest {
     }
 
     @Test
-    @Bug(7725)
+    @Issue("JENKINS-7725")
     public void testGetActionUrl_absoluteUriWithoutAuthority(){
         String[] uris = {
             "mailto:nobody@example.com",
@@ -135,6 +136,23 @@ public class FunctionsTest {
 
     @Test
     @PrepareForTest({Stapler.class, Jenkins.class})
+    public void testGetRelativeLinkTo_JobFromComputer() throws Exception{
+        Jenkins j = createMockJenkins();
+        ItemGroup parent = j;
+        String contextPath = "/jenkins";
+        StaplerRequest req = createMockRequest(contextPath);
+        mockStatic(Stapler.class);
+        when(Stapler.getCurrentRequest()).thenReturn(req);
+        Computer computer = mock(Computer.class);
+        createMockAncestors(req, createAncestor(computer, "."), createAncestor(j, "../.."));
+        TopLevelItem i = createMockItem(parent, "job/i/");
+        String result = Functions.getRelativeLinkTo(i);
+        assertEquals("/jenkins/job/i/", result);
+    }
+
+    @Ignore("too expensive to make it correct")
+    @Test
+    @PrepareForTest({Stapler.class, Jenkins.class})
     public void testGetRelativeLinkTo_JobNotContainedInView() throws Exception{
         Jenkins j = createMockJenkins();
         ItemGroup parent = j;
@@ -172,7 +190,7 @@ public class FunctionsTest {
         assertEquals("job/i/", result);
     }
 
-    @Bug(17713)
+    @Issue("JENKINS-17713")
     @PrepareForTest({Stapler.class, Jenkins.class})
     @Test public void getRelativeLinkTo_MavenModules() throws Exception {
         Jenkins j = createMockJenkins();
@@ -203,16 +221,20 @@ public class FunctionsTest {
         when(i.getName()).thenReturn("jobName");
         when(i.getDisplayName()).thenReturn("displayName");
         TopLevelItemAndItemGroup ig = mock(TopLevelItemAndItemGroup.class);
-        Jenkins j = mock(Jenkins.class);
+        ItemGroup j = mock(Jenkins.class);
         when(ig.getName()).thenReturn("parent");
         when(ig.getDisplayName()).thenReturn("parentDisplay");
-        when(ig.getParent()).thenReturn((ItemGroup) j);
+        when(ig.getParent()).thenReturn(j);
         when(i.getParent()).thenReturn(ig);
-        
+        Item i2 = mock(Item.class);
+        when(i2.getDisplayName()).thenReturn("top");
+        when(i2.getParent()).thenReturn(j);
+
         assertEquals("displayName", Functions.getRelativeDisplayNameFrom(i, ig));
         assertEquals("parentDisplay » displayName", Functions.getRelativeDisplayNameFrom(i, j));
+        assertEquals(".. » top", Functions.getRelativeDisplayNameFrom(i2, ig));
     }
-    
+
     private void createMockAncestors(StaplerRequest req, Ancestor... ancestors) {
         List<Ancestor> ancestorsList = Arrays.asList(ancestors);
         when(req.getAncestors()).thenReturn(ancestorsList);
@@ -263,7 +285,7 @@ public class FunctionsTest {
     }
 
     @Test
-    @Bug(16630)
+    @Issue("JENKINS-16630")
     public void testHumanReadableFileSize(){
         Locale defaultLocale = Locale.getDefault();
         try{
@@ -281,12 +303,40 @@ public class FunctionsTest {
         }
     }
 
-    @Bug(17030)
+    @Issue("JENKINS-17030")
     @Test
     public void testBreakableString() {
 
-        assertEquals("Hello world!", Functions.breakableString("Hello world!"));
-        assertEquals("H<wbr>,e<wbr>.l<wbr>/l<wbr>:o<wbr>-w<wbr>_o<wbr>=+|d", Functions.breakableString("H,e.l/l:o-w_o=+|d"));
-        assertEquals("ALongStrin<wbr>gThatCanNo<wbr>tBeBrokenB<wbr>yDefault", Functions.breakableString("ALongStringThatCanNotBeBrokenByDefault"));
+        assertBrokenAs("Hello world!", "Hello world!");
+        assertBrokenAs("Hello-world!", "Hello", "-world!");
+        assertBrokenAs("ALongStringThatCanNotBeBrokenByDefaultAndNeedsToUseTheBreakableElement",
+                "ALongStringThatCanNo", "tBeBrokenByDefaultAn", "dNeedsToUseTheBreaka", "bleElement");
+        assertBrokenAs("DontBreakShortStringBefore-Hyphen", "DontBreakShortStringBefore", "-Hyphen");
+        assertBrokenAs("jenkins_main_trunk", "jenkins", "_main", "_trunk");
+
+        assertBrokenAs("&lt;&lt;&lt;&lt;&lt;", "", "&lt;", "&lt;", "&lt;", "&lt;", "&lt;");
+        assertBrokenAs("&amp;&amp;&amp;&amp;&amp;", "", "&amp;", "&amp;", "&amp;", "&amp;", "&amp;");
+        assertBrokenAs("&thetasym;&thetasym;&thetasym;", "", "&thetasym;", "&thetasym;", "&thetasym;");
+        assertBrokenAs("Crazy &lt;ha ha&gt;", "Crazy ", "&lt;ha ha", "&gt;");
+        assertBrokenAs("A;String>Full]Of)Weird}Punctuation", "A;String", ">Full", "]Of", ")Weird", "}Punctuation");
+        assertBrokenAs("&lt;&lt;a&lt;bc&lt;def&lt;ghi&lt;", "", "&lt;", "&lt;a", "&lt;bc", "&lt;def", "&lt;ghi", "&lt;");
+        assertBrokenAs("H,e.l/l:o=w_o+|d", "H", ",e", ".l", "/l", ":o", "=w", "_o", "+|d");
+        assertBrokenAs("a¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷ", "a¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷa¶‱ﻷ", "a¶‱ﻷa¶‱ﻷa¶‱ﻷ");
+        assertNull(Functions.breakableString(null));
     }
+
+    private void assertBrokenAs(String plain, String... chunks) {
+        assertEquals(
+                Util.join(Arrays.asList(chunks), "<wbr>"),
+                Functions.breakableString(plain)
+        );
+    }
+
+    @Issue("JENKINS-20800")
+    @Test public void printLogRecordHtml() throws Exception {
+        LogRecord lr = new LogRecord(Level.INFO, "Bad input <xml/>");
+        lr.setLoggerName("test");
+        assertEquals("Bad input &lt;xml/&gt;\n", Functions.printLogRecordHtml(lr, null)[3]);
+    }
+
 }

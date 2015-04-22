@@ -1,8 +1,9 @@
 package hudson.cli;
 
+import static org.junit.Assert.assertEquals;
+
 import hudson.remoting.FastPipedInputStream;
 import hudson.remoting.FastPipedOutputStream;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -13,7 +14,8 @@ import java.io.IOException;
 /**
  * @author Kohsuke Kawaguchi
  */
-public class ConnectionTest extends Assert {
+public class ConnectionTest {
+
     Throwable e;
     private Connection c1;
     private Connection c2;
@@ -28,7 +30,7 @@ public class ConnectionTest extends Assert {
     }
 
     @Test
-    public void testEncyrpt() throws Throwable {
+    public void testEncrypt() throws Throwable {
         final SecretKey sessionKey = new SecretKeySpec(new byte[16],"AES");
 
         Thread t1 = new Thread() {
@@ -56,15 +58,17 @@ public class ConnectionTest extends Assert {
         };
         t2.start();
 
-        t1.join(3000);
-        t2.join(3000);
+        t1.join(9999);
+        t2.join(9999);
+
+        if (e != null) {
+            throw e;
+        }
 
         if (t1.isAlive() || t2.isAlive()) {
             t1.interrupt();
             t2.interrupt();
             throw new Error("thread is still alive");
         }
-
-        if (e!=null)    throw e;
     }
 }

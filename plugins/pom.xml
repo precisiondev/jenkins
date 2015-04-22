@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>org.jenkins-ci</groupId>
     <artifactId>jenkins</artifactId>
-    <version>1.31</version>
+    <version>1.34</version>
     <relativePath />
   </parent>
 
   <groupId>org.jenkins-ci.plugins</groupId>
   <artifactId>plugin</artifactId>
   <name>Jenkins plugin POM</name>
-  <version>1.525-SNAPSHOT</version>
+  <version>1.611-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <!--
@@ -22,6 +23,7 @@
     <connection>scm:svn:https://svn.jenkins-ci.org/trunk/hudson/plugins/</connection>
     <developerConnection>scm:svn:https://svn.jenkins-ci.org/trunk/hudson/plugins/</developerConnection>
     <url>https://svn.jenkins-ci.org/trunk/hudson/plugins/</url>
+    <tag>HEAD</tag>
   </scm>
 
   <issueManagement>
@@ -31,42 +33,27 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <concurrency>2</concurrency> <!-- may use e.g. 2C for 2 × (number of cores) -->
   </properties>
-
-  <dependencyManagement>
-    <dependencies>
-      <dependency><!-- if a plugin wants to depend on the maven plugin, choose the right version automatically -->
-        <groupId>org.jenkins-ci.main</groupId>
-        <artifactId>maven-plugin</artifactId>
-        <version>1.525-SNAPSHOT</version>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
 
   <dependencies>
     <dependency>
       <groupId>org.jenkins-ci.main</groupId>
       <artifactId>jenkins-war</artifactId>
       <type>war</type>
-      <version>1.525-SNAPSHOT</version>
+      <version>1.611-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.main</groupId>
       <artifactId>jenkins-core</artifactId>
-      <version>1.525-SNAPSHOT</version>
+      <version>1.611-SNAPSHOT</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.main</groupId>
       <artifactId>jenkins-test-harness</artifactId>
-      <version>1.525-SNAPSHOT</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.jenkins-ci.main</groupId>
-      <artifactId>ui-samples-plugin</artifactId>
-      <version>1.525-SNAPSHOT</version>
+      <version>1.611-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
     <!--
@@ -168,7 +155,7 @@
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
-        <!-- version specified in grandparent pom -->
+        <version>2.16</version>
         <configuration>
           <systemProperties>
             <property>
@@ -176,6 +163,8 @@
               <value>33849</value>
             </property>
           </systemProperties>
+          <reuseForks>true</reuseForks>
+          <forkCount>${concurrency}</forkCount>
         </configuration>
       </plugin>
       <plugin>
@@ -353,4 +342,18 @@
       <url>http://maven.jenkins-ci.org:8081/content/repositories/snapshots</url>
     </snapshotRepository>
   </distributionManagement>
+
+  <profiles>
+    <profile>
+      <id>all-tests</id>
+      <activation>
+        <property>
+          <name>!test</name>
+        </property>
+      </activation>
+      <properties>
+        <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
+      </properties>
+    </profile>
+  </profiles>
 </project>

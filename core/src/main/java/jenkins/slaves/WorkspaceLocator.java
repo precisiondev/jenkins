@@ -21,7 +21,7 @@ public abstract class WorkspaceLocator implements ExtensionPoint {
      * will determine the path to the workspace on that slave.
      * 
      * @param item The toplevel item
-     * @param slave The slave
+     * @param node The slave node
      * @return The absolute FilePath to the workspace on the slave. 
      * Will be created if it doesn't exist.
      * 
@@ -33,6 +33,6 @@ public abstract class WorkspaceLocator implements ExtensionPoint {
      * All registered {@link WorkspaceLocator}s.
      */
     public static ExtensionList<WorkspaceLocator> all() {
-        return Jenkins.getInstance().getExtensionList(WorkspaceLocator.class);
+        return ExtensionList.lookup(WorkspaceLocator.class);
     }
 }

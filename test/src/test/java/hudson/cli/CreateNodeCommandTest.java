@@ -28,10 +28,12 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.text.IsEmptyString.isEmptyString;
+import static hudson.cli.CLICommandInvoker.Matcher.failedWith;
+import static hudson.cli.CLICommandInvoker.Matcher.hasNoStandardOutput;
+import static hudson.cli.CLICommandInvoker.Matcher.succeededSilently;
+import hudson.model.Computer;
 import hudson.model.Node;
 import hudson.model.Slave;
-import hudson.security.Permission;
 import jenkins.model.Jenkins;
 
 import org.junit.Before;
@@ -50,29 +52,28 @@ public class CreateNodeCommandTest {
         command = new CLICommandInvoker(j, new CreateNodeCommand());
     }
 
-    @Test public void createNodeShouldFailWithoutAdministerPermision() throws Exception {
+    @Test public void createNodeShouldFailWithoutComputerCreatePermission() throws Exception {
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Permission.READ)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invoke()
         ;
 
-        assertThat(result.stderr(), containsString("user is missing the Overall/Administer permission"));
-        assertThat("No output expected", result.stdout(), isEmptyString());
-        assertThat("Command is expected to fail", result.returnCode(), equalTo(-1));
+        assertThat(result.stderr(), containsString("user is missing the Slave/Create permission"));
+        assertThat(result, hasNoStandardOutput());
+        assertThat(result, failedWith(-1));
     }
 
     @Test public void createNode() throws Exception {
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Jenkins.ADMINISTER)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Computer.CREATE, Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invoke()
         ;
 
-        assertThat("No error output expected", result.stderr(), isEmptyString());
-        assertThat("Command is expected to succeed", result.returnCode(), equalTo(0));
+        assertThat(result, succeededSilently());
 
         final Slave updatedSlave = (Slave) j.jenkins.getNode("SlaveFromXML");
         assertThat(updatedSlave.getNodeName(), equalTo("SlaveFromXML"));
@@ -83,13 +84,12 @@ public class CreateNodeCommandTest {
     @Test public void createNodeSpecifyingNameExplicitly() throws Exception {
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Jenkins.ADMINISTER)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Computer.CREATE, Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invokeWithArgs("CustomSlaveName")
         ;
 
-        assertThat("No error output expected", result.stderr(), isEmptyString());
-        assertThat("Command is expected to succeed", result.returnCode(), equalTo(0));
+        assertThat(result, succeededSilently());
 
         assertThat("A slave with original name should not exist", j.jenkins.getNode("SlaveFromXml"), nullValue());
 
@@ -104,13 +104,12 @@ public class CreateNodeCommandTest {
         final Node originalSlave = j.createSlave("SlaveFromXml", null, null);
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Jenkins.ADMINISTER)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Computer.CREATE, Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invokeWithArgs("CustomSlaveName")
         ;
 
-        assertThat("No error output expected", result.stderr(), isEmptyString());
-        assertThat("Command is expected to succeed", result.returnCode(), equalTo(0));
+        assertThat(result, succeededSilently());
 
         assertThat("A slave with original name should be left untouched", j.jenkins.getNode("SlaveFromXml"), equalTo(originalSlave));
 
@@ -125,14 +124,14 @@ public class CreateNodeCommandTest {
         j.createSlave("SlaveFromXML", null, null);
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Jenkins.ADMINISTER)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Computer.CREATE, Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invoke()
         ;
 
         assertThat(result.stderr(), containsString("Node 'SlaveFromXML' already exists"));
-        assertThat("No output expected", result.stdout(), isEmptyString());
-        assertThat("Command is expected to fail", result.returnCode(), equalTo(-1));
+        assertThat(result, hasNoStandardOutput());
+        assertThat(result, failedWith(-1));
     }
 
     @Test public void createNodeShouldFailIfNodeAlreadyExistWhenNameSpecifiedExplicitly() throws Exception {
@@ -140,13 +139,13 @@ public class CreateNodeCommandTest {
         j.createSlave("ExistingSlave", null, null);
 
         final CLICommandInvoker.Result result = command
-                .authorizedTo(Jenkins.ADMINISTER)
-                .withStdin(getClass().getResourceAsStream("node.xml"))
+                .authorizedTo(Computer.CREATE, Jenkins.READ)
+                .withStdin(Computer.class.getResourceAsStream("node.xml"))
                 .invokeWithArgs("ExistingSlave")
         ;
 
         assertThat(result.stderr(), containsString("Node 'ExistingSlave' already exists"));
-        assertThat("No output expected", result.stdout(), isEmptyString());
-        assertThat("Command is expected to fail", result.returnCode(), equalTo(-1));
+        assertThat(result, hasNoStandardOutput());
+        assertThat(result, failedWith(-1));
     }
 }

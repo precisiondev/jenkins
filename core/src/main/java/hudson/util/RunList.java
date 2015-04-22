@@ -27,24 +27,15 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import hudson.model.AbstractBuild;
-import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Node;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.model.TopLevelItem;
 import hudson.model.View;
 import hudson.util.Iterators.CountingPredicate;
 
-import java.util.AbstractList;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.GregorianCalendar;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
+import java.util.*;
 
 /**
  * {@link List} of {@link Run}s, sorted in the descending date order.
@@ -67,23 +58,26 @@ public class RunList<R extends Run> extends AbstractList<R> {
     }
 
     public RunList(View view) {// this is a type unsafe operation
-        List<Iterable<R>> jobs = new ArrayList<Iterable<R>>();
-        for (Item item : view.getItems())
-            for (Job<?,?> j : item.getAllJobs())
-                jobs.add(((Job)j).getBuilds());
+        Set<Job> jobs = new HashSet<Job>();
+        for (TopLevelItem item : view.getItems())
+            jobs.addAll(item.getAllJobs());
 
-        this.base = combine(jobs);
+        List<Iterable<R>> runLists = new ArrayList<Iterable<R>>();
+        for (Job job : jobs) {
+            runLists.add(job.getBuilds());
+        }
+        this.base = combine(runLists);
     }
 
     public RunList(Collection<? extends Job> jobs) {
-        List<Iterable<R>> src = new ArrayList<Iterable<R>>();
+        List<Iterable<R>> runLists = new ArrayList<Iterable<R>>();
         for (Job j : jobs)
-            src.add(j.getBuilds());
-        this.base = combine(src);
+            runLists.add(j.getBuilds());
+        this.base = combine(runLists);
     }
 
-    private Iterable<R> combine(Iterable<Iterable<R>> jobs) {
-        return Iterables.mergeSorted(jobs, new Comparator<R>() {
+    private Iterable<R> combine(Iterable<Iterable<R>> runLists) {
+        return Iterables.mergeSorted(runLists, new Comparator<R>() {
             public int compare(R o1, R o2) {
                 long lhs = o1.getTimeInMillis();
                 long rhs = o2.getTimeInMillis();
@@ -173,6 +167,8 @@ public class RunList<R extends Run> extends AbstractList<R> {
         return !iterator().hasNext();
     }
 
+    /** @deprecated see {@link #size()} for why this violates lazy-loading */
+    @Deprecated
     public R getFirstBuild() {
         size();
         return first;
@@ -190,9 +186,10 @@ public class RunList<R extends Run> extends AbstractList<R> {
 
     /**
      * Returns elements that satisfy the given predicate.
+     * <em>Warning:</em> this method mutates the original list and then returns it.
+     * @since 1.544
      */
-    // for compatibility reasons, this method doesn't create a new list but updates the current one
-    private RunList<R> filter(Predicate<R> predicate) {
+    public RunList<R> filter(Predicate<R> predicate) {
         size = null;
         first = null;
         base = Iterables.filter(base,predicate);
@@ -262,6 +259,19 @@ public class RunList<R extends Run> extends AbstractList<R> {
     }
 
     /**
+     * Filter the list to completed builds.
+     * <em>Warning:</em> this method mutates the original list and then returns it.
+     * @since 1.561
+     */
+    public RunList<R> completedOnly() {
+        return filter(new Predicate<R>() {
+            public boolean apply(R r) {
+                return !r.isBuilding();
+            }
+        });
+    }
+
+    /**
      * Filter the list to builds on a single node only
      * <em>Warning:</em> this method mutates the original list and then returns it.
      */
@@ -294,13 +304,13 @@ public class RunList<R extends Run> extends AbstractList<R> {
     public RunList<R> byTimestamp(final long start, final long end) {
         return
         limit(new CountingPredicate<R>() {
-            public boolean apply(int index,R r) {
-                return r.getTimeInMillis()<end;
-            }
-        }).filter(new Predicate<R>() {
-            public boolean apply(R r) {
+            public boolean apply(int index, R r) {
                 return start<=r.getTimeInMillis();
             }
+        }).filter(new Predicate<R>() {
+        	public boolean apply(R r) {
+        		return r.getTimeInMillis()<end;
+                    }
         });
     }
 

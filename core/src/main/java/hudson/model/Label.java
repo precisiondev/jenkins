@@ -1,18 +1,18 @@
 /*
  * The MIT License
- * 
+ *
  * Copyright (c) 2004-2010, Sun Microsystems, Inc., Kohsuke Kawaguchi, Tom Huybrechts
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -39,6 +39,7 @@ import hudson.model.labels.LabelExpressionLexer;
 import hudson.model.labels.LabelExpressionParser;
 import hudson.model.labels.LabelOperatorPrecedence;
 import hudson.model.labels.LabelVisitor;
+import hudson.model.queue.SubTask;
 import hudson.security.ACL;
 import hudson.slaves.NodeProvisioner;
 import hudson.slaves.Cloud;
@@ -71,7 +72,7 @@ import com.thoughtworks.xstream.io.HierarchicalStreamReader;
 
 /**
  * Group of {@link Node}s.
- * 
+ *
  * @author Kohsuke Kawaguchi
  * @see Jenkins#getLabels()
  * @see Jenkins#getLabel(String)
@@ -107,6 +108,17 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
             public int computeQueueLength() {
                 return Jenkins.getInstance().getQueue().countBuildableItemsFor(Label.this);
             }
+
+            @Override
+            protected Set<Node> getNodes() {
+                return Label.this.getNodes();
+            }
+
+            @Override
+            protected boolean matches(Queue.Item item, SubTask subTask) {
+                final Label l = item.getAssignedLabelFor(subTask);
+                return l != null && Label.this.matches(l.name);
+            }
         };
         this.nodeProvisioner = new NodeProvisioner(this, loadStatistics);
     }
@@ -141,6 +153,13 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
     public String getSearchUrl() {
         return getUrl();
     }
+
+    /**
+     * Returns true iff this label is an atom.
+     *
+     * @since 1.580
+     */
+    public boolean isAtom() { return false; }
 
     /**
      * Evaluates whether the label expression is true given the specified value assignment.
@@ -211,7 +230,7 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
         }
         return clouds;
     }
-    
+
     /**
      * Can jobs be assigned to this label?
      * <p>
@@ -367,7 +386,7 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
             for (TopLevelItem topLevelItem : Jenkins.getInstance().getItemMap().values()) {
                 if (topLevelItem instanceof AbstractProject) {
                     final AbstractProject project = (AbstractProject) topLevelItem;
-                    if (this.equals(project.getAssignedLabel())) {
+                    if (matches(project.getAssignedLabelString())) {
                         result++;
                     }
                 }
@@ -382,7 +401,7 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
                         for (Item i : parent.getItems()) {
                             if (i instanceof AbstractProject) {
                                 final AbstractProject project = (AbstractProject) i;
-                                if (this.equals(project.getAssignedLabel())) {
+                                if (matches(project.getAssignedLabelString())) {
                                     result++;
                                 }
                             }
@@ -410,7 +429,7 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
     public boolean isEmpty() {
         return getNodes().isEmpty() && getClouds().isEmpty();
     }
-    
+
     /*package*/ void reset() {
         nodes = null;
         clouds = null;
@@ -490,21 +509,30 @@ public abstract class Label extends Actionable implements Comparable<Label>, Mod
 
 
     @Override
-    public boolean equals(Object that) {
+    public final boolean equals(Object that) {
         if (this == that) return true;
         if (that == null || getClass() != that.getClass()) return false;
 
-        return name.equals(((Label)that).name);
+        return matches(((Label)that).name);
 
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
         return name.hashCode();
     }
 
-    public int compareTo(Label that) {
+    public final int compareTo(Label that) {
         return this.name.compareTo(that.name);
+    }
+
+
+    /**
+     * Evaluates whether the current label name is equal to the name parameter.
+     *
+     */
+    private final boolean matches(String name) {
+        return this.name.equals(name);
     }
 
     @Override

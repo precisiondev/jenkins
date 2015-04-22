@@ -1,8 +1,9 @@
 package lib.form
 
+import hudson.markup.RawHtmlMarkupFormatter
 import org.junit.Rule
 import org.junit.Test
-import org.jvnet.hudson.test.Bug
+import org.jvnet.hudson.test.Issue
 import org.jvnet.hudson.test.JenkinsRule
 
 /**
@@ -16,8 +17,9 @@ class ApplyButtonTest {
     /**
      * Editing code mirror should still gets reflected when you click apply.
      */
-    @Test @Bug(18436)
+    @Test @Issue("JENKINS-18436")
     public void editDescription() {
+        j.jenkins.markupFormatter = RawHtmlMarkupFormatter.INSTANCE // need something using CodeMirror
         def p = j.createFreeStyleProject()
         def b = j.assertBuildStatusSuccess(p.scheduleBuild2(0))
 

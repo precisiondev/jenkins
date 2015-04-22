@@ -24,12 +24,19 @@ THE SOFTWARE.
 
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form" xmlns:i="jelly:fmt" xmlns:p="/lib/hudson/project">
-  <l:layout title="${it.displayName}">
+  <l:layout title="${it.displayName}${not empty it.parent.fullDisplayName?' ['+it.parent.fullDisplayName+']':''}">
     <st:include page="sidepanel.jelly" />
     <l:main-panel>
-      <h1>${it.pronoun} <l:breakable value="${it.displayName}"/></h1>
-      <j:if test="${(it.name!=it.displayName) and (it.class.name!='hudson.matrix.MatrixConfiguration')}">
-        ${%Project name}: ${it.fullName}
+      <h1 class="job-index-headline page-headline">${it.pronoun} <l:breakable value="${it.displayName}"/></h1>
+      <j:if test="${(it.fullName!=it.fullDisplayName) and (it.class.name!='hudson.matrix.MatrixConfiguration')}"> <!-- TODO rather check for TopLevelItem (how to do this from Jelly?) -->
+        <j:choose>
+          <j:when test="${it.parent!=app}">
+            ${%Full project name}: ${it.fullName}
+          </j:when>
+          <j:otherwise>
+            ${%Project name}: ${it.fullName}
+          </j:otherwise>
+        </j:choose>
       </j:if>
       <t:editableDescription permission="${it.CONFIGURE}"/>
 

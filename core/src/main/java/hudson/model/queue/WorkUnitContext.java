@@ -67,7 +67,7 @@ public final class WorkUnitContext {
         this.item = item;
         this.task = item.task;
         this.future = (FutureImpl)item.getFuture();
-        this.actions = item.getActions();
+        this.actions = new ArrayList<Action>(item.getAllActions());
         
         // +1 for the main task
         int workUnitSize = Tasks.getSubTasksOf(task).size();
@@ -76,6 +76,7 @@ public final class WorkUnitContext {
             protected void onCriteriaMet() {
                 // on behalf of the member Executors,
                 // the one that executes the main thing will send notifications
+                // Unclear if this will work with AsynchronousExecution; it *seems* this is only called from synchronize which is only called from synchronizeStart which is only called from an executor thread.
                 Executor e = Executor.currentExecutor();
                 if (e.getCurrentWorkUnit().isMainWork()) {
                     e.getOwner().taskAccepted(e,task);
@@ -91,7 +92,10 @@ public final class WorkUnitContext {
      * to create its {@link WorkUnit}.
      */
     public WorkUnit createWorkUnit(SubTask execUnit) {
-        future.addExecutor(Executor.currentExecutor());
+        Executor executor = Executor.currentExecutor();
+        if (executor != null) { // TODO is it legal for this to be called by a non-executor thread?
+            future.addExecutor(executor);
+        }
         WorkUnit wu = new WorkUnit(this, execUnit);
         workUnits.add(wu);
         return wu;
@@ -118,6 +122,11 @@ public final class WorkUnitContext {
         }
     }
 
+    @Deprecated
+    public void synchronizeEnd(Queue.Executable executable, Throwable problems, long duration) throws InterruptedException {
+        synchronizeEnd(Executor.currentExecutor(), executable, problems, duration);
+    }
+
     /**
      * All the {@link Executor}s that jointly execute a {@link Task} call this method to synchronize on the end of the task.
      *
@@ -125,11 +134,10 @@ public final class WorkUnitContext {
      *      If any of the member thread is interrupted while waiting for other threads to join, all
      *      the member threads will report {@link InterruptedException}.
      */
-    public void synchronizeEnd(Queue.Executable executable, Throwable problems, long duration) throws InterruptedException {
+    public void synchronizeEnd(Executor e, Queue.Executable executable, Throwable problems, long duration) throws InterruptedException {
         endLatch.synchronize();
 
         // the main thread will send a notification
-        Executor e = Executor.currentExecutor();
         WorkUnit wu = e.getCurrentWorkUnit();
         if (wu.isMainWork()) {
             if (problems == null) {

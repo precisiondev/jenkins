@@ -5,7 +5,6 @@ import hudson.model.DownloadService.Downloadable;
 import hudson.model.Node;
 import hudson.model.TaskListener;
 import net.sf.json.JSONObject;
-import org.kohsuke.stapler.DataBoundConstructor;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -26,7 +25,6 @@ import java.net.URL;
 public abstract class DownloadFromUrlInstaller extends ToolInstaller {
     public final String id;
 
-    @DataBoundConstructor
     protected DownloadFromUrlInstaller(String id) {
         // this installer implementation is designed for platform independent binary,
         // and as such we don't provide the label support
@@ -124,15 +122,16 @@ public abstract class DownloadFromUrlInstaller extends ToolInstaller {
         }
 
         protected Downloadable createDownloadable() {
-            return new Downloadable(getId());
+            return new Downloadable(getDownloadableId());
         }
 
         /**
          * This ID needs to be unique, and needs to match the ID token in the JSON update file.
          * <p>
          * By default we use the fully-qualified class name of the {@link DownloadFromUrlInstaller} subtype.
+         * @since 1.610
          */
-        public String getId() {
+        public String getDownloadableId() {
             return clazz.getName().replace('$','.');
         }
 
@@ -146,7 +145,7 @@ public abstract class DownloadFromUrlInstaller extends ToolInstaller {
          * @return never null.
          */
         public List<? extends Installable> getInstallables() throws IOException {
-            JSONObject d = Downloadable.get(getId()).getData();
+            JSONObject d = Downloadable.get(getDownloadableId()).getData();
             if(d==null)     return Collections.emptyList();
             return Arrays.asList(((InstallableList)JSONObject.toBean(d,InstallableList.class)).list);
         }

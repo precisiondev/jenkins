@@ -5,6 +5,7 @@ import hudson.model.Node;
 import hudson.util.TimeUnit2;
 import jenkins.model.Jenkins;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -15,13 +16,14 @@ import java.util.logging.Logger;
  * If a slave is idle for 10 mins, this retention strategy will remove the slave. This can be used as-is for
  * a {@link Node} provisioned by cloud to implement the auto-scaling semantics, it can be subtyped to tweak
  * the behavior, or it can be used as an example.
- *
+ * <p>TODO {@link CloudRetentionStrategy} seems to be a better implementation.
  * @author Kohsuke Kawaguchi
  * @since 1.510
  */
 public class CloudSlaveRetentionStrategy<T extends Computer> extends RetentionStrategy<T> {
 
     @Override
+    @GuardedBy("hudson.model.Queue.lock")
     public long check(T c) {
         if (!c.isConnecting() && c.isAcceptingTasks()) {
             if (isIdleForTooLong(c)) {

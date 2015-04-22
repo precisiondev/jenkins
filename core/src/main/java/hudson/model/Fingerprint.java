@@ -24,6 +24,7 @@
 package hudson.model;
 
 import com.google.common.collect.ImmutableList;
+import com.infradna.tool.bridge_method_injector.WithBridgeMethods;
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.converters.Converter;
 import com.thoughtworks.xstream.converters.MarshallingContext;
@@ -38,11 +39,14 @@ import hudson.BulkChange;
 import hudson.Extension;
 import hudson.model.listeners.ItemListener;
 import hudson.model.listeners.SaveableListener;
+import hudson.security.ACL;
+import hudson.util.AtomicFileWriter;
 import hudson.util.HexBinaryConverter;
 import hudson.util.Iterators;
 import hudson.util.PersistedList;
 import hudson.util.RunList;
 import hudson.util.XStream2;
+import java.io.EOFException;
 import jenkins.model.FingerprintFacet;
 import jenkins.model.Jenkins;
 import jenkins.model.TransientFingerprintFacetFactory;
@@ -66,6 +70,8 @@ import java.util.Map.Entry;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.annotation.CheckForNull;
+import org.xmlpull.v1.XmlPullParserException;
 
 /**
  * A file being tracked by Jenkins.
@@ -115,8 +121,9 @@ public class Fingerprint implements ModelObject, Saveable {
          * Gets the {@link Job} that this pointer points to,
          * or null if such a job no longer exists.
          */
-        public AbstractProject getJob() {
-            return Jenkins.getInstance().getItemByFullName(name,AbstractProject.class);
+        @WithBridgeMethods(value=AbstractProject.class, castRequired=true)
+        public Job<?,?> getJob() {
+            return Jenkins.getInstance().getItemByFullName(name, Job.class);
         }
 
         /**
@@ -723,9 +730,16 @@ public class Fingerprint implements ModelObject, Saveable {
     @Extension
     public static final class ProjectRenameListener extends ItemListener {
         @Override
-        public void onRenamed(Item item, String oldName, String newName) {
+        public void onLocationChanged(final Item item, final String oldName, final String newName) {
+            ACL.impersonate(ACL.SYSTEM, new Runnable() {
+                @Override public void run() {
+                    locationChanged(item, oldName, newName);
+                }
+            });
+        }
+        private void locationChanged(Item item, String oldName, String newName) {
             if (item instanceof AbstractProject) {
-                AbstractProject p = Hudson.getInstance().getItemByFullName(newName, AbstractProject.class);
+                AbstractProject p = Jenkins.getInstance().getItemByFullName(newName, AbstractProject.class);
                 if (p != null) {
                     RunList builds = p.getBuilds();
                     for (Object build : builds) {
@@ -890,7 +904,15 @@ public class Fingerprint implements ModelObject, Saveable {
         return r;
     }
 
+    @Deprecated
     public synchronized void add(AbstractBuild b) throws IOException {
+        addFor((Run) b);
+    }
+
+    /**
+     * @since 1.577
+     */
+    public synchronized void addFor(Run b) throws IOException {
         add(b.getParent().getFullName(), b.getNumber());
     }
 
@@ -993,8 +1015,12 @@ public class Fingerprint implements ModelObject, Saveable {
             }
         }
 
-        if (modified)
+        if (modified) {
+            if (logger.isLoggable(Level.FINE)) {
+                logger.log(Level.FINE, "Saving trimmed {0}", getFingerprintFile(md5sum));
+            }
             save();
+        }
 
         return modified;
     }
@@ -1068,6 +1094,17 @@ public class Fingerprint implements ModelObject, Saveable {
     }
 
     /**
+     * Finds a facet of the specific type (including subtypes.)
+     */
+    public <T extends FingerprintFacet> T getFacet(Class<T> type) {
+        for (FingerprintFacet f : getFacets()) {
+            if (type.isInstance(f))
+                return type.cast(f);
+        }
+        return null;
+    }
+
+    /**
      * Returns the actions contributed from {@link #getFacets()}
      */
     public List<Action> getActions() {
@@ -1099,8 +1136,9 @@ public class Fingerprint implements ModelObject, Saveable {
         if (facets.isEmpty()) {
             file.getParentFile().mkdirs();
             // JENKINS-16301: fast path for the common case.
-            PrintWriter w = new PrintWriter(file, "UTF-8");
+            AtomicFileWriter afw = new AtomicFileWriter(file);
             try {
+                PrintWriter w = new PrintWriter(afw);
                 w.println("<?xml version='1.0' encoding='UTF-8'?>");
                 w.println("<fingerprint>");
                 w.print("  <timestamp>");
@@ -1109,7 +1147,7 @@ public class Fingerprint implements ModelObject, Saveable {
                 if (original != null) {
                     w.println("  <original>");
                     w.print("    <name>");
-                    w.print(original.name);
+                    w.print(Util.xmlEscape(original.name));
                     w.println("</name>");
                     w.print("    <number>");
                     w.print(original.number);
@@ -1120,13 +1158,13 @@ public class Fingerprint implements ModelObject, Saveable {
                 w.print(Util.toHexString(md5sum));
                 w.println("</md5sum>");
                 w.print("  <fileName>");
-                w.print(fileName);
+                w.print(Util.xmlEscape(fileName));
                 w.println("</fileName>");
                 w.println("  <usages>");
                 for (Map.Entry<String,RangeSet> e : usages.entrySet()) {
                     w.println("    <entry>");
                     w.print("      <string>");
-                    w.print(e.getKey());
+                    w.print(Util.xmlEscape(e.getKey()));
                     w.println("</string>");
                     w.print("      <ranges>");
                     w.print(RangeSet.ConverterImpl.serialize(e.getValue()));
@@ -1137,8 +1175,9 @@ public class Fingerprint implements ModelObject, Saveable {
                 w.println("  <facets/>");
                 w.print("</fingerprint>");
                 w.flush();
+                afw.commit();
             } finally {
-                w.close();
+                afw.abort();
             }
         } else {
             // Slower fallback that can persist facets.
@@ -1195,10 +1234,10 @@ public class Fingerprint implements ModelObject, Saveable {
     /**
      * Loads a {@link Fingerprint} from a file in the image.
      */
-    /*package*/ static Fingerprint load(byte[] md5sum) throws IOException {
+    /*package*/ static @CheckForNull Fingerprint load(byte[] md5sum) throws IOException {
         return load(getFingerprintFile(md5sum));
     }
-    /*package*/ static Fingerprint load(File file) throws IOException {
+    /*package*/ static @CheckForNull Fingerprint load(File file) throws IOException {
         XmlFile configFile = getConfigFile(file);
         if(!configFile.exists())
             return null;
@@ -1224,12 +1263,29 @@ public class Fingerprint implements ModelObject, Saveable {
                 // generally we don't want to wipe out user data just because we can't load it,
                 // but if the file size is 0, which is what's reported in HUDSON-2012, then it seems
                 // like recovering it silently by deleting the file is not a bad idea.
-                logger.log(Level.WARNING, "Size zero fingerprint. Disk corruption? "+configFile,e);
+                logger.log(Level.WARNING, "Size zero fingerprint. Disk corruption? {0}", configFile);
+                file.delete();
+                return null;
+            }
+            String parseError = messageOfParseException(e);
+            if (parseError != null) {
+                logger.log(Level.WARNING, "Malformed XML in {0}: {1}", new Object[] {configFile, parseError});
                 file.delete();
                 return null;
             }
             logger.log(Level.WARNING, "Failed to load "+configFile,e);
             throw e;
+        }
+    }
+    private static String messageOfParseException(Throwable t) {
+        if (t instanceof XmlPullParserException || t instanceof EOFException) {
+            return t.getMessage();
+        }
+        Throwable t2 = t.getCause();
+        if (t2 != null) {
+            return messageOfParseException(t2);
+        } else {
+            return null;
         }
     }
 

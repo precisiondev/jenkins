@@ -103,13 +103,23 @@ public abstract class ManagementLink implements ExtensionPoint, Action {
      * All regsitered instances.
      */
     public static ExtensionList<ManagementLink> all() {
-        return Jenkins.getInstance().getExtensionList(ManagementLink.class);
+        return ExtensionList.lookup(ManagementLink.class);
     }
 
     /**
-     * @return permission required for user to access this management link, in addition to {@link Jenkins.ADMINISTER}
+     * @return permission required for user to access this management link, in addition to {@link Jenkins#ADMINISTER}
      */
     public Permission getRequiredPermission() {
         return null;
+    }
+
+    /**
+     * Define if the rendered link will use the default GET method or POST.
+     * @return true if POST must be used
+     * @see RequirePOST
+     * @since 1.584
+     */
+    public boolean getRequiresPOST() {
+        return false;
     }
 }

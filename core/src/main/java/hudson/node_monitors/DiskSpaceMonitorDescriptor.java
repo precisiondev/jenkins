@@ -23,13 +23,12 @@
  */
 package hudson.node_monitors;
 
-import hudson.FilePath.FileCallable;
-import hudson.model.Computer;
+import hudson.Functions;
+import jenkins.MasterToSlaveFileCallable;
 import hudson.remoting.VirtualChannel;
 import hudson.Util;
 import hudson.slaves.OfflineCause;
 import hudson.node_monitors.DiskSpaceMonitorDescriptor.DiskSpace;
-import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
 import java.io.File;
 import java.io.IOException;
@@ -52,7 +51,7 @@ public abstract class DiskSpaceMonitorDescriptor extends AbstractAsyncNodeMonito
      * Value object that represents the disk space.
      */
     @ExportedBean
-    public static final class DiskSpace extends OfflineCause implements Serializable {
+    public static final class DiskSpace extends MonitorOfflineCause implements Serializable {
         private final String path;
         @Exported
         public final long size;
@@ -71,7 +70,7 @@ public abstract class DiskSpaceMonitorDescriptor extends AbstractAsyncNodeMonito
 
         @Override
         public String toString() {
-            return String.valueOf(size);
+            return Messages.DiskSpaceMonitorDescriptor_DiskSpace_FreeSpaceTooLow(getGbLeft(), path);
         }
         
         /**
@@ -97,15 +96,11 @@ public abstract class DiskSpaceMonitorDescriptor extends AbstractAsyncNodeMonito
          * Returns the HTML representation of the space.
          */
         public String toHtml() {
-            long space = size;
-            space/=1024L;   // convert to KB
-            space/=1024L;   // convert to MB
+            String humanReadableSpace = Functions.humanReadableByteSize(size);
             if(triggered) {
-                // less than a GB
-                return Util.wrapToErrorSpan(new BigDecimal(space).scaleByPowerOfTen(-3).toPlainString()+"GB");
+                return Util.wrapToErrorSpan(humanReadableSpace);
             }
-
-            return space/1024+"GB";
+            return humanReadableSpace;
         }
         
         /**
@@ -124,6 +119,7 @@ public abstract class DiskSpaceMonitorDescriptor extends AbstractAsyncNodeMonito
             this.triggered = triggered;
         }
         
+        @Override
         public Class<? extends AbstractDiskSpaceMonitor> getTrigger() {
             return trigger;
         }
@@ -159,18 +155,12 @@ public abstract class DiskSpaceMonitorDescriptor extends AbstractAsyncNodeMonito
         private static final long serialVersionUID = 2L;
     }
 
-    protected static final class GetUsableSpace implements FileCallable<DiskSpace> {
+    protected static final class GetUsableSpace extends MasterToSlaveFileCallable<DiskSpace> {
         public GetUsableSpace() {}
-        @IgnoreJRERequirement
         public DiskSpace invoke(File f, VirtualChannel channel) throws IOException {
-            try {
                 long s = f.getUsableSpace();
                 if(s<=0)    return null;
                 return new DiskSpace(f.getCanonicalPath(), s);
-            } catch (LinkageError e) {
-                // pre-mustang
-                return null;
-            }
         }
         private static final long serialVersionUID = 1L;
     }

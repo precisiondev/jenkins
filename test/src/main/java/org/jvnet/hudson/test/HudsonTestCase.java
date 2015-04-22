@@ -27,6 +27,7 @@ package org.jvnet.hudson.test;
 import com.gargoylesoftware.htmlunit.AlertHandler;
 import com.gargoylesoftware.htmlunit.html.HtmlImage;
 import com.google.inject.Injector;
+
 import hudson.ClassicPluginStrategy;
 import hudson.CloseProofOutputStream;
 import hudson.DNSMultiCast;
@@ -57,6 +58,7 @@ import hudson.model.*;
 import hudson.model.Executor;
 import hudson.model.Node.Mode;
 import hudson.model.Queue.Executable;
+import hudson.os.PosixAPI;
 import hudson.remoting.Which;
 import hudson.security.ACL;
 import hudson.security.AbstractPasswordBasedSecurityRealm;
@@ -82,7 +84,6 @@ import hudson.tools.ToolProperty;
 import hudson.util.PersistedList;
 import hudson.util.ReflectionUtils;
 import hudson.util.StreamTaskListener;
-import hudson.util.jna.GNUCLibrary;
 
 import java.beans.PropertyDescriptor;
 import java.io.BufferedReader;
@@ -100,6 +101,7 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLConnection;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -183,7 +185,9 @@ import com.gargoylesoftware.htmlunit.html.HtmlPage;
 import com.gargoylesoftware.htmlunit.javascript.HtmlUnitContextFactory;
 import com.gargoylesoftware.htmlunit.javascript.host.xml.XMLHttpRequest;
 import com.gargoylesoftware.htmlunit.xml.XmlPage;
+
 import java.net.HttpURLConnection;
+
 import jenkins.model.JenkinsLocationConfiguration;
 
 /**
@@ -255,7 +259,7 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
     /**
      * Number of seconds until the test times out.
      */
-    public int timeout = 180;
+    public int timeout = Integer.getInteger("jenkins.test.timeout", 180);
 
     private volatile Timer timeoutTimer;
 
@@ -272,6 +276,8 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
      * The directory where a war file gets exploded.
      */
     protected File explodedWarDir;
+
+    private boolean origDefaultUseCache = true;
 
     protected HudsonTestCase(String name) {
         super(name);
@@ -295,6 +301,18 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
 
     @Override
     protected void  setUp() throws Exception {
+        if(Functions.isWindows()) {
+            // JENKINS-4409.
+            // URLConnection caches handles to jar files by default,
+            // and it prevents delete temporary directories on Windows.
+            // Disables caching here.
+            // Though defaultUseCache is a static field,
+            // its setter and getter are provided as instance methods.
+            URLConnection aConnection = new File(".").toURI().toURL().openConnection();
+            origDefaultUseCache = aConnection.getDefaultUseCaches();
+            aConnection.setDefaultUseCaches(false);
+        }
+        
         env.pin();
         recipe();
         for (Runner r : recipes) {
@@ -355,8 +373,10 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
         timeoutTimer.schedule(new TimerTask() {
             @Override
             public void run() {
-                if (timeoutTimer!=null)
+                if (timeoutTimer!=null) {
+                    LOGGER.warning(String.format("Test timed out (after %d seconds).", timeout));
                     testThread.interrupt();
+                }
             }
         }, TimeUnit.SECONDS.toMillis(timeout));
     }
@@ -406,15 +426,26 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
 
             if (jenkins!=null)
                 jenkins.cleanUp();
-            env.dispose();
             ExtensionList.clearLegacyInstances();
             DescriptorExtensionList.clearLegacyInstances();
+
+            try {
+                env.dispose();
+            } catch (Exception x) {
+                x.printStackTrace();
+            }
 
             // Jenkins creates ClassLoaders for plugins that hold on to file descriptors of its jar files,
             // but because there's no explicit dispose method on ClassLoader, they won't get GC-ed until
             // at some later point, leading to possible file descriptor overflow. So encourage GC now.
             // see http://bugs.sun.com/view_bug.do?bug_id=4950148
             System.gc();
+            
+            // restore defaultUseCache
+            if(Functions.isWindows()) {
+                URLConnection aConnection = new File(".").toURI().toURL().openConnection();
+                aConnection.setDefaultUseCaches(origDefaultUseCache);
+            }
         }
     }
 
@@ -545,18 +576,26 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
         MavenInstallation m3 = new MavenInstallation("apache-maven-3.0.1",mvn.getHome(), NO_PROPERTIES);
         jenkins.getDescriptorByType(Maven.DescriptorImpl.class).setInstallations(m3);
         return m3;
-    }    
+    }
+
+    protected MavenInstallation configureMaven31() throws Exception {
+        MavenInstallation mvn = configureDefaultMaven("apache-maven-3.1.0", MavenInstallation.MAVEN_30);
+
+        MavenInstallation m3 = new MavenInstallation("apache-maven-3.1.0",mvn.getHome(), NO_PROPERTIES);
+        jenkins.getDescriptorByType(Maven.DescriptorImpl.class).setInstallations(m3);
+        return m3;
+    }
     
     /**
-     * Locates Maven2 and configure that as the only Maven in the system.
+     * Locates Maven and configures that as the only Maven in the system.
      */
     protected MavenInstallation configureDefaultMaven(String mavenVersion, int mavenReqVersion) throws Exception {
         // Does it exists in the buildDirectory - i.e. already extracted from previous test?
-        // see maven-junit-plugin systemProperties: buildDirectory -> ${project.build.directory} (so no reason to be null ;-) )
-        String buildDirectory = System.getProperty( "buildDirectory", "./target/classes/" );
-        File mavenAlreadyInstalled = new File(buildDirectory, mavenVersion);
-        if (mavenAlreadyInstalled.exists()) {
-            MavenInstallation mavenInstallation = new MavenInstallation("default",mavenAlreadyInstalled.getAbsolutePath(), NO_PROPERTIES);
+        // defined in jenkins-test-harness POM, but not plugins; TODO should not use relative paths as we do not know what CWD is
+        File buildDirectory = new File(System.getProperty("buildDirectory", "target"));
+        File mvnHome = new File(buildDirectory, mavenVersion);
+        if (mvnHome.exists()) {
+            MavenInstallation mavenInstallation = new MavenInstallation("default", mvnHome.getAbsolutePath(), NO_PROPERTIES);
             jenkins.getDescriptorByType(Maven.DescriptorImpl.class).setInstallations(mavenInstallation);
             return mavenInstallation;
         }
@@ -573,18 +612,18 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
 
         // otherwise extract the copy we have.
         // this happens when a test is invoked from an IDE, for example.
-        LOGGER.warning("Extracting a copy of Maven bundled in the test harness. " +
+        LOGGER.warning("Extracting a copy of Maven bundled in the test harness into " + mvnHome + ". " +
                 "To avoid a performance hit, set the system property 'maven.home' to point to a Maven2 installation.");
         FilePath mvn = jenkins.getRootPath().createTempFile("maven", "zip");
         mvn.copyFrom(HudsonTestCase.class.getClassLoader().getResource(mavenVersion + "-bin.zip"));
-        File mvnHome =  new File(buildDirectory);
-        mvn.unzip(new FilePath(mvnHome));
+        mvn.unzip(new FilePath(buildDirectory));
         // TODO: switch to tar that preserves file permissions more easily
-        if(!Functions.isWindows())
-            GNUCLibrary.LIBC.chmod(new File(mvnHome,mavenVersion+"/bin/mvn").getPath(),0755);
+        if(!Functions.isWindows()) {
+            PosixAPI.jnr().chmod(new File(mvnHome, "bin/mvn").getPath(), 0755);
+        }
 
         MavenInstallation mavenInstallation = new MavenInstallation("default",
-                new File(mvnHome,mavenVersion).getAbsolutePath(), NO_PROPERTIES);
+                mvnHome.getAbsolutePath(), NO_PROPERTIES);
 		jenkins.getDescriptorByType(Maven.DescriptorImpl.class).setInstallations(mavenInstallation);
 		return mavenInstallation;
     }
@@ -604,8 +643,9 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
             File antHome = createTmpDir();
             ant.unzip(new FilePath(antHome));
             // TODO: switch to tar that preserves file permissions more easily
-            if(!Functions.isWindows())
-                GNUCLibrary.LIBC.chmod(new File(antHome,"apache-ant-1.8.1/bin/ant").getPath(),0755);
+            if(!Functions.isWindows()) {
+                PosixAPI.jnr().chmod(new File(antHome,"apache-ant-1.8.1/bin/ant").getPath(),0755);
+            }
 
             antInstallation = new AntInstallation("default", new File(antHome,"apache-ant-1.8.1").getAbsolutePath(),NO_PROPERTIES);
         }
@@ -1801,7 +1841,16 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
         }
 
         public Page goTo(String relative, String expectedContentType) throws IOException, SAXException {
-            Page p = super.getPage(getContextPath() + relative);
+            while (relative.startsWith("/")) relative = relative.substring(1);
+            Page p;
+            try {
+                p = super.getPage(getContextPath() + relative);
+            } catch (IOException x) {
+                if (x.getCause() != null) {
+                    x.getCause().printStackTrace();
+                }
+                throw x;
+            }
             assertEquals(expectedContentType,p.getWebResponse().getContentType());
             return p;
         }
@@ -1969,8 +2018,8 @@ public abstract class HudsonTestCase extends TestCase implements RootAction {
 
         if (!Functions.isWindows()) {
             try {
-                GNUCLibrary.LIBC.unsetenv("MAVEN_OPTS");
-                GNUCLibrary.LIBC.unsetenv("MAVEN_DEBUG_OPTS");
+                PosixAPI.jnr().unsetenv("MAVEN_OPTS");
+                PosixAPI.jnr().unsetenv("MAVEN_DEBUG_OPTS");
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING,"Failed to cancel out MAVEN_OPTS",e);
             }

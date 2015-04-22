@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.acegisecurity.context.SecurityContextHolder;
 import org.jvnet.hudson.test.HudsonTestCase;
-import org.jvnet.hudson.test.Bug;
+import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.MockBuilder;
 import org.jvnet.hudson.test.recipes.LocalData;
 
@@ -66,7 +66,7 @@ public class DependencyGraphTest extends HudsonTestCase {
         assertNull("down1 should not be triggered: " + log, down1.getLastBuild());
         q = jenkins.getQueue().getItem(down2);
         assertNotNull("down2 should be in queue (quiet period): " + log, q);
-        Run r = (Run)q.getFuture().get(6, TimeUnit.SECONDS);
+        Run r = (Run)q.getFuture().get(60, TimeUnit.SECONDS);
         assertNotNull("down2 should be triggered: " + log, r);
         assertNotNull("down2 should have MailMessageIdAction",
                       r.getAction(MailMessageIdAction.class));
@@ -83,7 +83,7 @@ public class DependencyGraphTest extends HudsonTestCase {
                      down2.getLastBuild().getNumber());
         q = jenkins.getQueue().getItem(down1);
         assertNotNull("down1 should be in queue (quiet period): " + log, q);
-        r = (Run)q.getFuture().get(6, TimeUnit.SECONDS);
+        r = (Run)q.getFuture().get(60, TimeUnit.SECONDS);
         assertNotNull("down1 should be triggered", r);
     }
 
@@ -112,7 +112,7 @@ public class DependencyGraphTest extends HudsonTestCase {
     /**
      * Tests that all dependencies are found even when some projects have restricted visibility.
      */
-    @LocalData @Bug(5265)
+    @LocalData @Issue("JENKINS-5265")
     public void testItemReadPermission() throws Exception {
         // Rebuild dependency graph as anonymous user:
         jenkins.rebuildDependencyGraph();
@@ -129,7 +129,7 @@ public class DependencyGraphTest extends HudsonTestCase {
         }
     }
 
-    @Bug(17247)
+    @Issue("JENKINS-17247")
     public void testTopologicalSort() throws Exception {
         /*
             A-B---C-E

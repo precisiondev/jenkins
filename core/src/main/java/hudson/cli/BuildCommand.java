@@ -23,6 +23,7 @@
  */
 package hudson.cli;
 
+import hudson.Util;
 import hudson.console.ModelHyperlinkNote;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
@@ -33,9 +34,10 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.ParameterDefinition;
 import hudson.Extension;
 import hudson.AbortException;
-import hudson.console.ModelHyperlinkNote;
 import hudson.model.Item;
+import hudson.model.Result;
 import hudson.model.TaskListener;
+import hudson.model.User;
 import hudson.model.queue.QueueTaskFuture;
 import hudson.scm.PollingResult.Change;
 import hudson.util.EditDistance;
@@ -43,7 +45,6 @@ import hudson.util.StreamTaskListener;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
@@ -51,7 +52,7 @@ import java.util.ArrayList;
 import java.util.Map.Entry;
 import java.io.FileNotFoundException;
 import java.io.PrintStream;
-import java.util.concurrent.ExecutionException;
+import javax.annotation.Nonnull;
 
 import jenkins.model.Jenkins;
 
@@ -70,7 +71,10 @@ public class BuildCommand extends CLICommand {
     @Argument(metaVar="JOB",usage="Name of the job to build",required=true)
     public AbstractProject<?,?> job;
 
-    @Option(name="-s",usage="Wait until the completion/abortion of the command")
+    @Option(name="-f", usage="Follow the build progress. Like -s only interrupts are not passed through to the build.")
+    public boolean follow = false;
+
+    @Option(name="-s",usage="Wait until the completion/abortion of the command. Interrupts are passed through to the build.")
     public boolean sync = false;
 
     @Option(name="-w",usage="Wait until the start of the command")
@@ -85,11 +89,10 @@ public class BuildCommand extends CLICommand {
     @Option(name="-v",usage="Prints out the console output of the build. Use with -s")
     public boolean consoleOutput = false;
 
-    @Option(name="-r", usage="Number of times to retry reading of the output log if it does not exists on first attempt. Defaults to 0. Use with -v.")
-    public String retryCntStr = "0";
+    @Option(name="-r") @Deprecated
+    public int retryCnt = 10;
 
-    // hold parsed retryCnt;
-    private int retryCnt = 0;
+    protected static final String BUILD_SCHEDULING_REFUSED = "Build scheduling Refused by an extension, hence not in Queue";
 
     protected int run() throws Exception {
         job.checkPermission(Item.BUILD);
@@ -100,15 +103,21 @@ public class BuildCommand extends CLICommand {
             if (pdp==null)
                 throw new AbortException(job.getFullDisplayName()+" is not parameterized but the -p option was specified");
 
+            //TODO: switch to type annotations after the migration to Java 1.8
             List<ParameterValue> values = new ArrayList<ParameterValue>();
 
             for (Entry<String, String> e : parameters.entrySet()) {
                 String name = e.getKey();
                 ParameterDefinition pd = pdp.getParameterDefinition(name);
-                if (pd==null)
+                if (pd==null) {
                     throw new AbortException(String.format("\'%s\' is not a valid parameter. Did you mean %s?",
                             name, EditDistance.findNearest(name, pdp.getParameterDefinitionNames())));
-                values.add(pd.createValue(this,e.getValue()));
+                }
+                ParameterValue val = pd.createValue(this, Util.fixNull(e.getValue()));
+                if (val == null) {
+                    throw new AbortException(String.format("Cannot resolve the value for the parameter \'%s\'.",name));
+                }
+                values.add(val);
             }
 
             // handle missing parameters by adding as default values ISSUE JENKINS-7162
@@ -117,13 +126,15 @@ public class BuildCommand extends CLICommand {
                     continue;
 
                 // not passed in use default
-                values.add(pd.getDefaultParameterValue());
+                ParameterValue defaultValue = pd.getDefaultParameterValue();
+                if (defaultValue == null) {
+                    throw new AbortException(String.format("No default value for the parameter \'%s\'.",pd.getName()));
+                }
+                values.add(defaultValue);
             }
 
             a = new ParametersAction(values);
         }
-
-        retryCnt = Integer.parseInt(retryCntStr);
 
         if (checkSCM) {
             if (job.poll(new StreamTaskListener(stdout, getClientCharset())).change == Change.NONE) {
@@ -131,13 +142,29 @@ public class BuildCommand extends CLICommand {
             }
         }
 
-        QueueTaskFuture<? extends AbstractBuild> f = job.scheduleBuild2(0, new CLICause(Jenkins.getAuthentication().getName()), a);
+        if (!job.isBuildable()) {
+            String msg = Messages.BuildCommand_CLICause_CannotBuildUnknownReasons(job.getFullDisplayName());
+            if (job.isDisabled()) {
+                msg = Messages.BuildCommand_CLICause_CannotBuildDisabled(job.getFullDisplayName());
+            } else if (job.isHoldOffBuildUntilSave()){
+                msg = Messages.BuildCommand_CLICause_CannotBuildConfigNotSaved(job.getFullDisplayName());
+            }
+            stderr.println(msg);
+            return -1;
+        }
 
-        if (wait || sync) {
+        QueueTaskFuture<? extends AbstractBuild> f = job.scheduleBuild2(0, new CLICause(Jenkins.getAuthentication().getName()), a);
+        
+        if (wait || sync || follow) {
+            if (f == null) {
+                stderr.println(BUILD_SCHEDULING_REFUSED);
+                return -1;
+            }
             AbstractBuild b = f.waitForStart();    // wait for the start
             stdout.println("Started "+b.getFullDisplayName());
+            stdout.flush();
 
-            if (sync) {
+            if (sync || follow) {
                 try {
                     if (consoleOutput) {
                         // read output in a retry loop, by default try only once
@@ -163,9 +190,13 @@ public class BuildCommand extends CLICommand {
                     stdout.println("Completed "+b.getFullDisplayName()+" : "+b.getResult());
                     return b.getResult().ordinal;
                 } catch (InterruptedException e) {
-                    // if the CLI is aborted, try to abort the build as well
-                    f.cancel(true);
-                    throw e;
+                    if (follow) {
+                        return 125;
+                    } else {
+                        // if the CLI is aborted, try to abort the build as well
+                        f.cancel(true);
+                        throw e;
+                    }
                 }
             }
         }
@@ -180,7 +211,12 @@ public class BuildCommand extends CLICommand {
             "Aside from general scripting use, this command can be\n" +
             "used to invoke another job from within a build of one job.\n" +
             "With the -s option, this command changes the exit code based on\n" +
-            "the outcome of the build (exit code 0 indicates a success.)\n" +
+            "the outcome of the build (exit code 0 indicates a success)\n" +
+            "and interrupting the command will interrupt the job.\n" +
+            "With the -f option, this command changes the exit code based on\n" +
+            "the outcome of the build (exit code 0 indicates a success)\n" +
+            "however, unlike -s, interrupting the command will not interrupt\n" +
+            "the job (exit code 125 indicates the command was interrupted)\n" +
             "With the -c option, a build will only run if there has been\n" +
             "an SCM change"
         );
@@ -200,7 +236,9 @@ public class BuildCommand extends CLICommand {
 
         @Override
         public String getShortDescription() {
-            return Messages.BuildCommand_CLICause_ShortDescription(startedBy);
+            User user = User.get(startedBy, false);
+            String userName = user != null ? user.getDisplayName() : startedBy;
+            return Messages.BuildCommand_CLICause_ShortDescription(userName);
         }
 
         @Override

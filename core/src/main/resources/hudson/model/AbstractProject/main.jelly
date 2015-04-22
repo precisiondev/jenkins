@@ -31,11 +31,12 @@ THE SOFTWARE.
   </j:if>
 
   <p:projectActionFloatingBox />
-  
+
   <table style="margin-top: 1em; margin-left:1em;">
 
     <j:forEach var="act" items="${it.prominentActions}">
-      <t:summary icon="${act.iconFileName}" href="${act.urlName}">
+      <j:set var="icon" value="${act.iconClassName != null ? act.iconClassName : act.iconFileName}"/>
+      <t:summary icon="${icon}" href="${act.urlName}">
         ${act.displayName}
       </t:summary>
     </j:forEach>
@@ -51,28 +52,10 @@ THE SOFTWARE.
       ${%Recent Changes}
     </t:summary>
 
-    <j:set var="tr" value="${it.lastCompletedBuild.testResultAction}"/>
-    <j:if test="${tr!=null}">
-      <j:if test="${tr.class.name != 'hudson.tasks.test.AggregatedTestResultAction'}">
-        <t:summary icon="clipboard.png">
-          <a href="lastCompletedBuild/testReport/" class="model-link inside">${%Latest Test Result}</a>
-          <t:test-result it="${tr}" />
-        </t:summary>
-      </j:if>
-    </j:if>
-
-    <j:set var="atr" value="${it.lastCompletedBuild.aggregatedTestResultAction}"/>
-    <j:if test="${atr!=null}">
-      <t:summary icon="clipboard.png">
-        <a href="lastCompletedBuild/aggregatedTestReport/" class="model-link inside">${%Latest Aggregated Test Result}</a>
-        <t:test-result it="${atr}" />
-      </t:summary>
-    </j:if>
-    
   </table>
 
   <!-- merge fragments from the actions -->
-  <j:forEach var="a" items="${it.actions}">
+  <j:forEach var="a" items="${it.allActions}">
     <st:include page="jobMain.jelly" it="${a}" optional="true" />
   </j:forEach>
 

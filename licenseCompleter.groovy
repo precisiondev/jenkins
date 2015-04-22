@@ -31,6 +31,13 @@ complete {
         if (dependency.licenses.isEmpty())
             dependency.licenses=[cddl]
     }
+    
+/* TODO
+    // according to JSR-250 1.0-20050927.133100 POM, it came from JAX-WS, which is under CDDL.
+    match("javax.annotation:jsr250-api") {
+        rewriteLicense([], cddl)
+    }
+*/
 
     match("antlr:*") {
         rewriteLicense([], license("BSD License","http://www.antlr.org/license.html"))
@@ -44,7 +51,7 @@ complete {
         rewriteLicense([],license("BSD License","http://dom4j.sourceforge.net/dom4j-1.6.1/license.html"))
     }
 
-    match(["org.codehaus.groovy:*","org.jenkins-ci.groovy:*"]) {
+    match(["org.jenkins-ci.groovy:*"]) {
         // see http://groovy.codehaus.org/License+Information
         // see http://jmdns.sourceforge.net/license.html
         rewriteLicense([],apacheLicense)
@@ -61,18 +68,8 @@ complete {
 
     // these are our own modules that have license in the trunk but not in these released versions
     // as we upgrade them, we should just pick up the license info from POM
-    match(["org.jvnet.hudson:task-reactor","org.jvnet.hudson:annotation-indexer","*:jinterop-wmi","*:maven2.1-interceptor","*:lib-jenkins-maven-embedder"]) {
+    match(["*:maven2.1-interceptor","*:lib-jenkins-maven-embedder"]) {
         rewriteLicense([],jenkinsLicense)
-    }
-
-    match("*:jna") {
-        rewriteLicense([],lgpl)
-    }
-
-    match(["org.jvnet.localizer:localizer"]) {
-        // see http://java.net/projects/localizer
-        // see http://java.net/projects/trilead-putty-extension/
-        rewriteLicense([],mitLicense);
     }
 
     match("org.codehaus.plexus:plexus-interactivity-api") {

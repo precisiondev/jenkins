@@ -57,6 +57,33 @@ public class ItemsTest {
 
         assertEquals("../meu,../bu,../zo", Items.computeRelativeNamesAfterRenaming("ga", "meu", "../ga,../bu,../zo", foo ));
         assertEquals("../qux/ga,bu,zo", Items.computeRelativeNamesAfterRenaming("foo/baz", "foo/qux", "../baz/ga,bu,zo", foo_bar ));
+
+        assertEquals("foo-renamed,foo_bar", Items.computeRelativeNamesAfterRenaming("foo", "foo-renamed", "foo,foo_bar", root ));
+
+        // Handle moves too:
+        assertEquals("../nue/dir/j", Items.computeRelativeNamesAfterRenaming("dir", "nue/dir", "../dir/j", foo));
+        assertEquals("../dir/j", Items.computeRelativeNamesAfterRenaming("nue/dir", "dir", "../nue/dir/j", foo));
+        assertEquals("../top2/dir/j", Items.computeRelativeNamesAfterRenaming("top1/dir", "top2/dir", "../top1/dir/j", foo));
+        assertEquals("nue/dir/j", Items.computeRelativeNamesAfterRenaming("dir", "nue/dir", "dir/j", root));
+        assertEquals("dir/j", Items.computeRelativeNamesAfterRenaming("nue/dir", "dir", "nue/dir/j", root));
+        assertEquals("top2/dir/j", Items.computeRelativeNamesAfterRenaming("top1/dir", "top2/dir", "top1/dir/j", root));
+        assertEquals("/nue/dir/j", Items.computeRelativeNamesAfterRenaming("dir", "nue/dir", "/dir/j", foo));
+        assertEquals("/dir/j", Items.computeRelativeNamesAfterRenaming("nue/dir", "dir", "/nue/dir/j", foo));
+        assertEquals("/top2/dir/j", Items.computeRelativeNamesAfterRenaming("top1/dir", "top2/dir", "/top1/dir/j", foo));
+        assertEquals("sister", Items.computeRelativeNamesAfterRenaming("fooq", "foo", "sister", foo));
+        assertEquals("/foo/sister", Items.computeRelativeNamesAfterRenaming("fooq", "foo", "/fooq/sister", foo));
+    }
+
+    @Test public void getRelativeNameFrom() {
+        assertEquals("foo", Items.getRelativeNameFrom("foo", ""));
+        assertEquals("foo/bar", Items.getRelativeNameFrom("foo/bar", ""));
+        assertEquals("../bar", Items.getRelativeNameFrom("bar", "foo"));
+        assertEquals("../baz", Items.getRelativeNameFrom("foo/baz", "foo/bar"));
+        assertEquals("bar", Items.getRelativeNameFrom("foo/bar", "foo"));
+        assertEquals(".", Items.getRelativeNameFrom("foo/bar", "foo/bar"));
+        assertEquals("../..", Items.getRelativeNameFrom("foo", "foo/bar/baz"));
+        assertEquals("bar/baz", Items.getRelativeNameFrom("foo/bar/baz", "foo"));
+        assertEquals("../quux/hey", Items.getRelativeNameFrom("foo/bar/quux/hey", "foo/bar/baz"));
     }
 
 }

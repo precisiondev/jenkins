@@ -31,6 +31,7 @@ import hudson.scm.SCM;
 import jenkins.model.Jenkins;
 
 import java.io.IOException;
+import javax.annotation.Nonnull;
 
 /**
  * Contributes environment variables to builds.
@@ -73,21 +74,48 @@ public abstract class EnvironmentContributor implements ExtensionPoint {
      * This method gets invoked concurrently for multiple {@link Run}s that are being built at the same time,
      * so it must be concurrent-safe.
      *
+     * <p>
+     * When building environment variables for a build, Jenkins will also invoke
+     * {@link #buildEnvironmentFor(Job, EnvVars, TaskListener)}. This method only needs to add
+     * variables that are scoped to builds.
+     *
      * @param r
-     *      Build that's being performed. Never null.
+     *      Build that's being performed.
      * @param envs
      *      Partially built environment variable map. Implementation of this method is expected to
-     *      add additional variables here. Never null.
+     *      add additional variables here.
      * @param listener
-     *      Connected to the build console. Can be used to report errors. Never null.
+     *      Connected to the build console. Can be used to report errors.
      */
-    public abstract void buildEnvironmentFor(Run r, EnvVars envs, TaskListener listener) throws IOException, InterruptedException;
+    public void buildEnvironmentFor(@Nonnull Run r, @Nonnull EnvVars envs, @Nonnull TaskListener listener) throws IOException, InterruptedException {}
+
+    /**
+     * Contributes environment variables used for a job.
+     *
+     * <p>
+     * This method can be called repeatedly for the same {@link Job}, thus
+     * the computation of this method needs to be efficient.
+     *
+     * <p>
+     * This method gets invoked concurrently for multiple {@link Job}s,
+     * so it must be concurrent-safe.
+     *
+     * @param j
+     *      Job for which some activities are launched.
+     * @param envs
+     *      Partially built environment variable map. Implementation of this method is expected to
+     *      add additional variables here.
+     * @param listener
+     *      Connected to the build console. Can be used to report errors.
+     * @since 1.527
+     */
+    public void buildEnvironmentFor(@Nonnull Job j, @Nonnull EnvVars envs, @Nonnull TaskListener listener) throws IOException, InterruptedException {}
 
     /**
      * Returns all the registered {@link EnvironmentContributor}s.
      */
     public static ExtensionList<EnvironmentContributor> all() {
-        return Jenkins.getInstance().getExtensionList(EnvironmentContributor.class);
+        return ExtensionList.lookup(EnvironmentContributor.class);
     }
 
     /**

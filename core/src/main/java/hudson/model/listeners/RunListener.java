@@ -94,7 +94,7 @@ public abstract class RunListener<R extends Run> implements ExtensionPoint {
     public void onCompleted(R r, @Nonnull TaskListener listener) {}
 
     /**
-     * Called after a build is moved to the {@link Run.State#COMPLETED} state.
+     * Called after a build is moved to the {@link hudson.model.Run.State#COMPLETED} state.
      *
      * <p>
      * At this point, all the records related to a build is written down to the disk. As such,
@@ -235,7 +235,7 @@ public abstract class RunListener<R extends Run> implements ExtensionPoint {
     }
 
     /**
-     * Fires the {@link #onFinalized(Run)} event.
+     * Fires the {@link #onDeleted} event.
      */
     public static void fireDeleted(Run r) {
         for (RunListener l : all()) {
@@ -252,7 +252,7 @@ public abstract class RunListener<R extends Run> implements ExtensionPoint {
      * Returns all the registered {@link RunListener}s.
      */
     public static ExtensionList<RunListener> all() {
-        return Jenkins.getInstance().getExtensionList(RunListener.class);
+        return ExtensionList.lookup(RunListener.class);
     }
 
     private static void report(Throwable e) {

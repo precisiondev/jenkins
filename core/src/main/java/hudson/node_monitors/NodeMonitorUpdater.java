@@ -4,13 +4,13 @@ import hudson.Extension;
 import hudson.model.Computer;
 import hudson.model.TaskListener;
 import hudson.slaves.ComputerListener;
-import hudson.util.DaemonThreadFactory;
 import jenkins.model.Jenkins;
 
 import java.io.IOException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import jenkins.util.Timer;
 
 /**
  * When a slave is connected, redo the node monitoring.
@@ -19,10 +19,8 @@ import java.util.concurrent.TimeUnit;
  */
 @Extension
 public class NodeMonitorUpdater extends ComputerListener {
-    // TODO: shutdown hook to kill off this timer
-    private final ScheduledExecutorService timer = new ScheduledThreadPoolExecutor(1,new DaemonThreadFactory());
 
-    private volatile long timestamp;
+    private final AtomicInteger id = new AtomicInteger();
 
     /**
      * Triggers the update with 5 seconds quiet period, to avoid triggering data check too often
@@ -30,10 +28,11 @@ public class NodeMonitorUpdater extends ComputerListener {
      */
     @Override
     public void onOnline(Computer c, TaskListener listener) throws IOException, InterruptedException {
-        timestamp = System.currentTimeMillis();
-        timer.schedule(new Runnable() {
+        Timer.get().schedule(new Runnable() {
+            final int _id = id.incrementAndGet();
+
             public void run() {
-                if (System.currentTimeMillis()-timestamp<4000)
+                if (id.get() != _id)
                     return;
 
                 for (NodeMonitor nm : Jenkins.getInstance().getComputer().getMonitors()) {
@@ -42,4 +41,5 @@ public class NodeMonitorUpdater extends ComputerListener {
             }
         }, 5, TimeUnit.SECONDS);
     }
+
 }

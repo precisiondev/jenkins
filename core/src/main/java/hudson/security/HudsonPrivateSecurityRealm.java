@@ -25,6 +25,7 @@ package hudson.security;
 
 import com.thoughtworks.xstream.converters.UnmarshallingContext;
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.Util;
 import hudson.diagnosis.OldDataMonitor;
 import hudson.model.Descriptor;
@@ -51,7 +52,6 @@ import org.acegisecurity.providers.encoding.PasswordEncoder;
 import org.acegisecurity.providers.encoding.ShaPasswordEncoder;
 import org.acegisecurity.userdetails.UserDetails;
 import org.acegisecurity.userdetails.UsernameNotFoundException;
-import org.apache.tools.ant.taskdefs.email.Mailer;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.ForwardToView;
 import org.kohsuke.stapler.HttpResponse;
@@ -73,13 +73,16 @@ import javax.servlet.http.HttpServletResponse;
 import static javax.servlet.http.HttpServletResponse.SC_UNAUTHORIZED;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.MissingResourceException;
+import java.util.ResourceBundle;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * {@link SecurityRealm} that performs authentication by looking up {@link User}.
@@ -129,6 +132,11 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
         return !disableSignup;
     }
 
+    @Restricted(NoExternalUse.class) // Jelly
+    public boolean getAllowsSignup() {
+        return allowsSignup();
+    }
+
     /**
      * Checks if captcha is enabled on user signup.
      *
@@ -173,8 +181,15 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
     @Override
     protected Details authenticate(String username, String password) throws AuthenticationException {
         Details u = loadUserByUsername(username);
-        if (!u.isPasswordCorrect(password))
-            throw new BadCredentialsException("Failed to login as "+username);
+        if (!u.isPasswordCorrect(password)) {
+            String message;
+            try {
+                message = ResourceBundle.getBundle("org.acegisecurity.messages").getString("AbstractUserDetailsAuthenticationProvider.badCredentials");
+            } catch (MissingResourceException x) {
+                message = "Bad credentials";
+            }
+            throw new BadCredentialsException(message);
+        }
         return u;
     }
 
@@ -198,7 +213,7 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
 
     /**
      * Creates an account and associates that with the given identity. Used in conjunction
-     * with {@link #commenceSignup(FederatedIdentity)}.
+     * with {@link #commenceSignup}.
      */
     public User doCreateAccountWithFederatedIdentity(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException {
         User u = _doCreateAccount(req,rsp,"signupWithFederatedIdentity.jelly");
@@ -280,9 +295,10 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
      */
     private void tryToMakeAdmin(User u) {
         AuthorizationStrategy as = Jenkins.getInstance().getAuthorizationStrategy();
-        if (as instanceof GlobalMatrixAuthorizationStrategy) {
-            GlobalMatrixAuthorizationStrategy ma = (GlobalMatrixAuthorizationStrategy) as;
-            ma.add(Jenkins.ADMINISTER,u.getId());
+        for (PermissionAdder adder : ExtensionList.lookup(PermissionAdder.class)) {
+            if (adder.add(as, u, Jenkins.ADMINISTER)) {
+                return;
+            }
         }
     }
 
@@ -310,7 +326,9 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
         else {
             User user = User.get(si.username, false);
             if (null != user)
-                si.errorMessage = Messages.HudsonPrivateSecurityRealm_CreateAccount_UserNameAlreadyTaken();
+                // Allow sign up. SCM people has no such property.
+                if (user.getProperty(Details.class) != null)
+                    si.errorMessage = Messages.HudsonPrivateSecurityRealm_CreateAccount_UserNameAlreadyTaken();
         }
 
         if(si.fullname==null || si.fullname.length()==0)
@@ -318,6 +336,14 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
 
         if(si.email==null || !si.email.contains("@"))
             si.errorMessage = Messages.HudsonPrivateSecurityRealm_CreateAccount_InvalidEmailAddress();
+
+        if (! User.isIdOrFullnameAllowed(si.username)) {
+            si.errorMessage = hudson.model.Messages.User_IllegalUsername(si.username);
+        }
+
+        if (! User.isIdOrFullnameAllowed(si.fullname)) {
+            si.errorMessage = hudson.model.Messages.User_IllegalFullname(si.fullname);
+        }
 
         if(si.errorMessage!=null) {
             // failed. ask the user to try again.
@@ -356,7 +382,7 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
      * This is used primarily when the object is listed in the breadcrumb, in the user management screen.
      */
     public String getDisplayName() {
-        return "User Database";
+        return Messages.HudsonPrivateSecurityRealm_DisplayName();
     }
 
     public ACL getACL() {
@@ -670,11 +696,6 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
         public String getDisplayName() {
             return Messages.HudsonPrivateSecurityRealm_DisplayName();
         }
-
-        @Override
-        public String getHelpFile() {
-            return "/help/security/private-realm.html"; 
-        }
     }
 
     private static final Filter CREATE_FIRST_USER_FILTER = new Filter() {
@@ -684,7 +705,8 @@ public class HudsonPrivateSecurityRealm extends AbstractPasswordBasedSecurityRea
         public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
             HttpServletRequest req = (HttpServletRequest) request;
 
-            if(req.getRequestURI().equals(req.getContextPath()+"/")) {
+            /* allow signup from the Jenkins home page, or /manage, which is where a /configureSecurity form redirects to */
+            if(req.getRequestURI().equals(req.getContextPath()+"/") || req.getRequestURI().equals(req.getContextPath() + "/manage")) {
                 if (needsToCreateFirstUser()) {
                     ((HttpServletResponse)response).sendRedirect("securityRealm/firstUser");
                 } else {// the first user already created. the role of this filter is over.
